@@ -1710,21 +1710,28 @@ function initParametres(){
   };
   $('#sbPush').addEventListener('click', () => { if(requirePriv('global:sync')) runSb('Envoi', syncPush); });
   $('#sbPull').addEventListener('click', () => { if(requirePriv('global:sync')) runSb('Récupération', syncPull); });
-  $('#sbTest').addEventListener('click', async () => {
+  const btnTest = $('#sbTest');
+  if(btnTest) btnTest.addEventListener('click', async () => {
     if(!requirePriv('global:sync')) return;
     // teste les valeurs affichées (et les enregistre au passage)
     DB.settings.sbUrl = $('#sbUrl').value.trim();
     DB.settings.sbKey = $('#sbKey').value.trim();
     saveDB();
     if(!syncReady()){ toast('Renseignez l\'URL et la clé, puis réessayez', true); return; }
+    btnTest.disabled = true;
+    const libelle = btnTest.textContent;
+    btnTest.textContent = '⏳ Test en cours…';
     $('#sbStatus').textContent = 'Test de connexion…';
     try{
       await syncTest();
-      renderSbStatus();
+      $('#sbStatus').textContent = '✅ Test réussi — Supabase répond (clé acceptée)';
       toast('✅ Supabase répond : connexion OK');
     }catch(err){
       $('#sbStatus').textContent = '❌ ' + err.message;
       toast(err.message, true);
+    }finally{
+      btnTest.disabled = false;
+      btnTest.textContent = libelle;
     }
   });
 

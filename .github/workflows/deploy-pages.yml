@@ -26,7 +26,10 @@ jobs:
           mkdir _site
           cp index.html _site/
           cp -r css js _site/
+          # cache-buster : évite qu'un navigateur garde un ancien js/css après une mise à jour
+          sed -i "s/__BUILD__/${GITHUB_SHA:0:8}/g" _site/index.html
           touch _site/.nojekyll
+          grep -o 'v=[^" ]*' _site/index.html | sort -u
 
       - name: Publier sur gh-pages
         run: |
