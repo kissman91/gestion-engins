@@ -22,13 +22,19 @@ function escapeHTML(s){
   return String(s === null || s === undefined ? '' : s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+/* Type de privilège exigé selon le type d'élément supprimé */
+const DEL_PRIV = {
+  travaux:'travaux', terrain:'travaux', charges:'charges', engin:'engins',
+  employe:'parametres', activite:'parametres', prevention:'maintenance', facture:'factures'
+};
 function badge(cat){
   const c = CATEGORIES[cat] || CATEGORIES.autre;
   return `<span class="badge ${c.badge}">${c.label}</span>`;
-}
-function del(id, kind){
-  const labels = { travaux:'ce travail', charges:'cette charge', engin:'cet engin (et ses données ?)',
+}function del(id, kind){
+  const labels = { travaux:'ce travail', charges:'cette charge', engin:'cet engin (et ses données ?)', 
                    employe:'cet employé', activite:'cette activité', prevention:'cet intervalle' };
+  const mod = DEL_PRIV[kind] || kind;
+  if(!requirePriv(mod + ':suppr')) return;
   if(!confirm('Supprimer ' + (labels[kind]||'cet élément') + ' ?')) return;
   if(kind === 'travaux') DB.travaux = DB.travaux.filter(x => x.id !== id);
   else if(kind === 'charges') DB.charges = DB.charges.filter(x => x.id !== id);
@@ -64,14 +70,35 @@ function currentView(){
   return h.split('?')[0];
 }
 function route(){
+  if(!requireAuth()) return;
   const v = currentView();
   $$('.view').forEach(s => s.classList.add('hidden'));
-  const target = $('#view-' + v) || $('#view-dashboard');
-  target.classList.remove('hidden');
-  $$('.nav a').forEach(a => a.classList.toggle('active', a.dataset.view === v));
-  renderView(v);
+  const refus = !canMod(v, 'vue');
+  const vue = refus ? 'acces-refuse' : (($('#view-' + v) ? v : defaultView()));
+  $('#view-' + vue).classList.remove('hidden');
+  $$('.nav a').forEach(a => a.classList.toggle('active', !refus && a.dataset.view === vue));
+  if(refus){
+    const m = PRIV_MODULES.find(x => x.key === v);
+    $('#accesRefuseCle').textContent = 'Privilège manquant : « ' + (m ? m.label : v) + ' » — vue';
+    $('#accesRetour').setAttribute('href', '#/' + defaultView());
+  }
+  renderView(vue);
 }
 window.addEventListener('hashchange', route);
+
+/* Vue par défaut autorisée pour le compte connecté */
+function defaultView(){
+  if(canMod('dashboard', 'vue')) return 'dashboard';
+  const m = PRIV_MODULES.find(x => canMod(x.key, 'vue'));
+  return m ? m.key : 'acces-refuse';
+}
+
+/* Masque les boutons dont le compte n'a pas le privilège (attribut data-priv) */
+function applyPrivVisibility(){
+  $$('[data-priv]').forEach(el => el.classList.toggle('hidden', !can(el.dataset.priv)));
+  // masque du menu les modules que le compte connecté ne peut pas voir
+  $$('.nav a[data-view]').forEach(a => a.classList.toggle('hidden', !canMod(a.dataset.view, 'vue')));
+}
 
 function renderView(v){
   switch(v){
@@ -84,14 +111,128 @@ function renderView(v){
     case 'maintenance': renderMaintenance(); break;
     case 'rapports': renderRapports(); break;
     case 'parametres': renderParametres(); break;
+    case 'utilisateurs': renderUtilisateurs(); break;
   }
+  applyPrivVisibility();
 }
-function renderAll(){ renderView(currentView()); renderMini(); }
+function renderAll(){
+  const v = currentView();
+  renderView(canMod(v, 'vue') ? v : defaultView());
+  renderMini();
+}
 function renderMini(){
   $('#brandName').textContent = DB.settings.nom || 'Mon Entreprise';
+  const u = currentUser();
+  const chip = $('#userChip');
+  if(u){
+    chip.classList.remove('hidden');
+    $('#ucNom').textContent = u.nom + ' · ' + (ROLES[u.role] ? ROLES[u.role].label : u.role);
+    chip.title = 'Connecté en tant que ' + u.login;
+  }else{
+    chip.classList.add('hidden');
+  }
   const k = computeKPIs(periodRange('month'));
   $('#periodSummaryMini').innerHTML =
     `Ce mois : <b class="${k.benefice>=0?'pos':'neg'}">${money(k.benefice)}</b><br>CA ${money(k.ca)}`;
+}
+
+/* ============================================================
+   CONNEXION / PRIVILÈGES
+   ============================================================ */
+function requireAuth(){
+  if(!utilisateurs().length){ openAuth('first'); return false; }
+  if(!currentUser()){ openAuth('login'); return false; }
+  closeAuth();
+  return true;
+}
+function openAuth(mode){
+  const s = $('#authScreen');
+  s.classList.remove('hidden');
+  $('#formLogin').classList.toggle('hidden', mode !== 'login');
+  $('#formFirstAdmin').classList.toggle('hidden', mode !== 'first');
+  $('#authTitle').textContent = mode === 'first' ? 'Créer l\'administrateur' : 'Connexion';
+  $('#authSub').textContent = mode === 'first'
+    ? 'Première ouverture — les comptes sont locaux à cet appareil'
+    : (DB.settings.nom || 'Mon Entreprise');
+  $('#lgErr').classList.add('hidden');
+  $('#faErr').classList.add('hidden');
+  setTimeout(() => {
+    const f = mode === 'first' ? $('#faNom') : $('#lgLogin');
+    if(f) f.focus();
+  }, 60);
+}
+function closeAuth(){ $('#authScreen').classList.add('hidden'); }
+function authErr(sel, msg){
+  const el = $(sel);
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+function doLogout(){
+  logout();
+  renderMini();
+  openAuth('login');
+  toast('Déconnecté ✓');
+}
+function afterLogin(){
+  closeAuth();
+  const v = currentView();
+  if(!canMod(v, 'vue') && v !== defaultView()) location.hash = '#/' + defaultView();
+  route();
+  renderMini();
+  const u = currentUser();
+  toast('Bonjour ' + (u ? u.nom.split(' ')[0] : '') + ' 👋');
+  maybeGreetDemo();
+}
+
+function initAuth(){
+  $('#formLogin').addEventListener('submit', async e => {
+    e.preventDefault();
+    const btn = e.target.querySelector('button[type=submit]');
+    btn.disabled = true;
+    try{
+      await login($('#lgLogin').value, $('#lgMdp').value, $('#lgRemember').checked);
+      $('#lgMdp').value = '';
+      afterLogin();
+    }catch(err){
+      authErr('#lgErr', err.message);
+    }finally{
+      btn.disabled = false;
+    }
+  });
+
+  $('#formFirstAdmin').addEventListener('submit', async e => {
+    e.preventDefault();
+    const nom = $('#faNom').value.trim();
+    const id = $('#faLogin').value.trim();
+    const mdp = $('#faMdp').value;
+    if(!nom || !id) return authErr('#faErr', 'Renseignez nom et identifiant');
+    if(mdp.length < 4) return authErr('#faErr', 'Mot de passe : 4 caractères minimum');
+    if(mdp !== $('#faMdp2').value) return authErr('#faErr', 'Les deux mots de passe ne correspondent pas');
+    if(!loginDispo(id)) return authErr('#faErr', 'Cet identifiant est déjà utilisé');
+    const btn = e.target.querySelector('button[type=submit]');
+    btn.disabled = true;
+    try{
+      const u = await enregistrerUtilisateur({ nom, login:id, role:'admin', actif:true, mdp });
+      ouvrirSession(u, false);
+      $('#formFirstAdmin').reset();
+      afterLogin();
+      toast('Administrateur créé ✓');
+    }catch(err){
+      authErr('#faErr', 'Erreur : ' + err.message);
+    }finally{
+      btn.disabled = false;
+    }
+  });
+
+  $('#btnLogout').addEventListener('click', doLogout);
+  $('#btnLogout2').addEventListener('click', doLogout);
+}
+
+/* Demande un privilège pour une action (retourne false si refusé) */
+function requirePriv(cle){
+  if(can(cle)) return true;
+  toast('Privilège insuffisant (' + cle + ')', true);
+  return false;
 }
 
 /* ============================================================
@@ -334,8 +475,8 @@ function renderTravaux(){
       <td class="num pos">${money(trvMontant(t))}</td>
       <td>${escapeHTML(t.client||'')}</td>
       <td style="white-space:nowrap">
-        <button class="btn-icon" title="Modifier" onclick="editTravaux('${t.id}')">✏️</button>
-        <button class="btn-icon del" title="Supprimer" onclick="del('${t.id}','travaux')">🗑</button>
+        <button class="btn-icon" data-priv="travaux:edit" title="Modifier" onclick="editTravaux('${t.id}')">✏️</button>
+        <button class="btn-icon del" data-priv="travaux:suppr" title="Supprimer" onclick="del('${t.id}','travaux')">🗑</button>
       </td>
     </tr>`;
   }).join('') || '<tr><td colspan="8" class="muted">Aucun travail enregistré.</td></tr>';
@@ -380,6 +521,7 @@ function resetTravauxForm(){
 function initTravaux(){
   $('#formTravaux').addEventListener('submit', e => {
     e.preventDefault();
+    if(!requirePriv('travaux:edit')) return;
     const id = $('#trvId').value;
     const data = {
       id: id || uid(),
@@ -409,6 +551,7 @@ function initTravaux(){
   $('#trvFilterMonth').addEventListener('input', renderTravaux);
   $('#trvFilterEngin').addEventListener('change', renderTravaux);
   $('#trvExport').addEventListener('click', () => {
+    if(!requirePriv('global:export')) return;
     const rows = DB.travaux.slice().sort((a,b) => a.date < b.date ? 1 : -1).map(t => {
       const a = activiteById(t.activiteId);
       return [t.date, a?a.libelle:'', a?a.unite:'', t.qte, t.prixUnitaire, trvMontant(t), enginNom(t.enginId), t.conducteur||'', t.client||'', t.notes||''];
@@ -444,6 +587,8 @@ function renderTerrain(){
   const condSel = $('#trConducteur');
   condSel.innerHTML = '<option value="">—</option>' +
     optionHTML(DB.employes.filter(e => e.role === 'conducteur'), 'id', 'nom', condSel.value);
+  const moiU = currentUser();
+  if(moiU && moiU.employeId && !condSel.value && employeById(moiU.employeId)) condSel.value = moiU.employeId;
   $('#trClients').innerHTML = Array.from(new Set(DB.travaux.map(t => (t.client||'').trim()).filter(Boolean)))
     .map(c => `<option value="${escapeHTML(c)}">`).join('');
   if(!$('#trDate').value) $('#trDate').value = today();
@@ -486,7 +631,7 @@ function renderTerrainJour(){
       <span class="r-ico">${a && /débardage|debardage|ouverture/i.test(a.libelle + a.unite) ? '🪵' : '🚛'}</span>
       <span class="r-main">${escapeHTML(a?a.libelle:'Travail')} — ${fmtNum(t.qte)} ${escapeHTML(a?a.unite:'unités')} · ${escapeHTML(enginNom(t.enginId))}${t.conducteur ? ' · ' + escapeHTML((employeById(t.conducteur)||{}).nom||'') : ''}</span>
       <span class="r-amt pos">${money(trvMontant(t))}</span>
-      <button class="btn-icon del" title="Supprimer" onclick="del('${t.id}','travaux')">🗑</button>
+      <button class="btn-icon del" data-priv="travaux:suppr" title="Supprimer" onclick="del('${t.id}','travaux')">🗑</button>
     </div>`;
   }).join('') || '<p class="muted">Aucune saisie aujourd\'hui.</p>';
 }
@@ -494,6 +639,7 @@ function renderTerrainJour(){
 function initTerrain(){
   $('#formTerrain').addEventListener('submit', e => {
     e.preventDefault();
+    if(!requirePriv('terrain:edit')) return;
     const act = activiteById(terrainActId);
     const q = Number($('#trQte').value)||0;
     const data = {
@@ -530,6 +676,7 @@ function initTerrain(){
   $('#trQte').addEventListener('input', updateTerrainMontant);
   $('#trDate').addEventListener('change', renderTerrainJour);
   $('#trSync').addEventListener('click', async () => {
+    if(!requirePriv('global:sync')) return;
     if(!syncReady()){ toast('Configurez Supabase dans Paramètres', true); return; }
     $('#trSync').disabled = true; $('#trStatus').textContent = '☁️ Synchronisation…';
     try{
@@ -569,7 +716,7 @@ function renderFactures(){
     <td class="num pos">${money((f.totals||{}).ttc)}</td>
     <td style="white-space:nowrap">
       <button class="btn-icon" title="Ouvrir" onclick="openFacture('${f.id}')">👁</button>
-      <button class="btn-icon" title="Supprimer" onclick="delFacture('${f.id}')">🗑</button>
+      <button class="btn-icon del" data-priv="factures:suppr" title="Supprimer" onclick="delFacture('${f.id}')">🗑</button>
     </td>
   </tr>`).join('') || '<tr><td colspan="5" class="muted">Aucune facture.</td></tr>';
 
@@ -670,6 +817,7 @@ function openFacture(id){
 }
 
 function delFacture(id){
+  if(!requirePriv('factures:suppr')) return;
   if(!confirm('Supprimer cette facture ?')) return;
   DB.factures = DB.factures.filter(x => x.id !== id);
   if(facDraft && facDraft.savedId === id) facDraft = null;
@@ -696,11 +844,13 @@ function initFactures(){
   });
   $('#formFacture').addEventListener('submit', e => {
     e.preventDefault();
+    if(!requirePriv('factures:edit')) return;
     if(buildFactureDraft()) renderFacturePreview();
   });
   $('#facSearch').addEventListener('input', renderFactures);
 
   $('#facSave').addEventListener('click', () => {
+    if(!requirePriv('factures:edit')) return;
     if(!facDraft){ toast('Générez d\'abord un aperçu', true); return; }
     if(facDraft.savedId){ toast('Facture déjà enregistrée'); return; }
     const f = Object.assign({}, facDraft, { id: uid(), _at: new Date().toISOString() });
@@ -792,8 +942,8 @@ function renderCharges(){
     <td>${c.enginId ? escapeHTML(enginNom(c.enginId)) : '<span class="muted">Global</span>'}</td>
     <td class="num neg">${money(c.montant)}</td>
     <td style="white-space:nowrap">
-      <button class="btn-icon" title="Modifier" onclick="editCharge('${c.id}')">✏️</button>
-      <button class="btn-icon del" title="Supprimer" onclick="del('${c.id}','charges')">🗑</button>
+      <button class="btn-icon" data-priv="charges:edit" title="Modifier" onclick="editCharge('${c.id}')">✏️</button>
+      <button class="btn-icon del" data-priv="charges:suppr" title="Supprimer" onclick="del('${c.id}','charges')">🗑</button>
     </td>
   </tr>`).join('') || '<tr><td colspan="6" class="muted">Aucune charge enregistrée.</td></tr>';
 
@@ -868,6 +1018,7 @@ function initCharges(){
 
   $('#formCharges').addEventListener('submit', e => {
     e.preventDefault();
+    if(!requirePriv('charges:edit')) return;
     const cat = $('#chCategorie').value;
     const id = $('#chId').value;
     const prev = id ? (DB.charges.find(x => x.id === id) || {}) : {};
@@ -920,6 +1071,7 @@ function initCharges(){
   $('#chFilterCat').addEventListener('change', renderCharges);
   $('#chFilterEngin').addEventListener('change', renderCharges);
   $('#chExport').addEventListener('click', () => {
+    if(!requirePriv('global:export')) return;
     const rows = DB.charges.slice().sort((a,b) => a.date < b.date ? 1 : -1).map(c =>
       [c.date, CATEGORIES[c.categorie].label, chargeDetail(c).replace(/<[^>]+>/g,''), c.enginId?enginNom(c.enginId):'Global', c.montant, c.km||'', c.litres||'', c.notes||'']);
     exportCSV('charges.csv', ['Date','Catégorie','Détail','Engin','Montant','Km','Litres','Notes'], rows);
@@ -952,8 +1104,8 @@ function renderEngins(){
         <div class="e-kpi"><div class="v ${k.benefice>=0?'pos':'neg'}">${money(k.benefice)}</div><div class="l">Bénéfice</div></div>
       </div>
       <div class="e-actions">
-        <button class="btn-icon" title="Modifier" onclick="event.stopPropagation();editEngin('${e.id}')">✏️</button>
-        <button class="btn-icon del" title="Supprimer" onclick="event.stopPropagation();del('${e.id}','engin')">🗑</button>
+        <button class="btn-icon" data-priv="engins:edit" title="Modifier" onclick="event.stopPropagation();editEngin('${e.id}')">✏️</button>
+        <button class="btn-icon del" data-priv="engins:suppr" title="Supprimer" onclick="event.stopPropagation();del('${e.id}','engin')">🗑</button>
       </div>
     </div>`;
   }).join('') || '<div class="muted">Aucun engin. Cliquez sur « Nouvel engin » pour commencer.</div>';
@@ -1050,6 +1202,7 @@ function initEngins(){
   $('#engCancel').addEventListener('click', resetEnginForm);
   $('#formEngin').addEventListener('submit', e => {
     e.preventDefault();
+    if(!requirePriv('engins:edit')) return;
     const id = $('#engId').value;
     const data = {
       id: id || uid(),
@@ -1110,8 +1263,8 @@ function renderMaintenance(){
     <td class="num">${p.km ? fmtNum(p.km) : '—'}</td>
     <td class="num">${p.mois || '—'}</td>
     <td style="white-space:nowrap">
-      <button class="btn-icon" onclick="editPrevention('${p.id}')">✏️</button>
-      <button class="btn-icon del" onclick="del('${p.id}','prevention')">🗑</button>
+      <button class="btn-icon" data-priv="maintenance:edit" onclick="editPrevention('${p.id}')">✏️</button>
+      <button class="btn-icon del" data-priv="maintenance:suppr" onclick="del('${p.id}','prevention')">🗑</button>
     </td>
   </tr>`).join('') || '<tr><td colspan="4" class="muted">Aucun intervalle défini.</td></tr>';
 
@@ -1189,6 +1342,7 @@ function initMaintenance(){
   $('#prevCancel').addEventListener('click', resetPreventionForm);
   $('#formPrevention').addEventListener('submit', e => {
     e.preventDefault();
+    if(!requirePriv('maintenance:edit')) return;
     const id = $('#prevId').value;
     const data = {
       id: id || uid(),
@@ -1391,8 +1545,8 @@ function renderParametres(){
     <td>${escapeHTML(a.unite)}</td>
     <td class="num">${money(a.prix)}</td>
     <td style="white-space:nowrap">
-      <button class="btn-icon" onclick="editActivite('${a.id}')">✏️</button>
-      <button class="btn-icon del" onclick="del('${a.id}','activite')">🗑</button>
+      <button class="btn-icon" data-priv="parametres:edit" onclick="editActivite('${a.id}')">✏️</button>
+      <button class="btn-icon del" data-priv="parametres:suppr" onclick="del('${a.id}','activite')">🗑</button>
     </td>
   </tr>`).join('');
 
@@ -1404,8 +1558,8 @@ function renderParametres(){
       <td>${emp.role === 'conducteur' ? 'Conducteur' : emp.role === 'apprenti' ? 'Apprenti' : 'Autre'}</td>
       <td class="num">${money(total)}</td>
       <td style="white-space:nowrap">
-        <button class="btn-icon" onclick="editEmploye('${emp.id}')">✏️</button>
-        <button class="btn-icon del" onclick="del('${emp.id}','employe')">🗑</button>
+        <button class="btn-icon" data-priv="parametres:edit" onclick="editEmploye('${emp.id}')">✏️</button>
+        <button class="btn-icon del" data-priv="parametres:suppr" onclick="del('${emp.id}','employe')">🗑</button>
       </td>
     </tr>`;
   }).join('') || '<tr><td colspan="4" class="muted">Aucun employé.</td></tr>';
@@ -1436,6 +1590,7 @@ function editEmploye(id){
 function initParametres(){
   $('#formSettings').addEventListener('submit', e => {
     e.preventDefault();
+    if(!requirePriv('parametres:edit')) return;
     DB.settings.nom = $('#setNom').value.trim() || 'Mon Entreprise';
     DB.settings.devise = $('#setDevise').value.trim();
     DB.settings.prixTransfert = Number($('#setPrixTransfert').value)||0;
@@ -1453,6 +1608,7 @@ function initParametres(){
 
   $('#formActivite').addEventListener('submit', e => {
     e.preventDefault();
+    if(!requirePriv('parametres:edit')) return;
     const id = $('#actId').value;
     const data = {
       id: id || uid(),
@@ -1474,6 +1630,7 @@ function initParametres(){
 
   $('#formEmploye').addEventListener('submit', e => {
     e.preventDefault();
+    if(!requirePriv('parametres:edit')) return;
     const id = $('#empId').value;
     const data = { id: id || uid(), nom: $('#empNom').value.trim(), role: $('#empRole').value };
     if(!data.nom) return;
@@ -1490,6 +1647,7 @@ function initParametres(){
 
   // --- Supabase ---
   $('#sbSave').addEventListener('click', () => {
+    if(!requirePriv('global:sync')) return;
     DB.settings.sbUrl = $('#sbUrl').value.trim();
     DB.settings.sbKey = $('#sbKey').value.trim();
     DB.settings.sbAuto = $('#sbAuto').checked;
@@ -1511,10 +1669,11 @@ function initParametres(){
       toast(err.message, true);
     }
   };
-  $('#sbPush').addEventListener('click', () => runSb('Envoi', syncPush));
-  $('#sbPull').addEventListener('click', () => runSb('Récupération', syncPull));
+  $('#sbPush').addEventListener('click', () => { if(requirePriv('global:sync')) runSb('Envoi', syncPush); });
+  $('#sbPull').addEventListener('click', () => { if(requirePriv('global:sync')) runSb('Récupération', syncPull); });
 
   $('#btnExportJson').addEventListener('click', () => {
+    if(!requirePriv('global:export')) return;
     const blob = new Blob([exportJSON()], { type:'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -1523,6 +1682,7 @@ function initParametres(){
     URL.revokeObjectURL(a.href);
   });
   $('#importFile').addEventListener('change', e => {
+    if(!requirePriv('global:export')){ e.target.value = ''; return; }
     const f = e.target.files[0];
     if(!f) return;
     const reader = new FileReader();
@@ -1537,12 +1697,17 @@ function initParametres(){
     e.target.value = '';
   });
   $('#btnDemo').addEventListener('click', () => {
+    if(!requirePriv('parametres:edit')) return;
     if(!confirm('Charger des données de démonstration ? (remplace les données actuelles)')) return;
     seedDemo(); renderAll(); toast('Données de démonstration chargées ✓');
   });
   $('#btnReset').addEventListener('click', () => {
-    if(!confirm('Tout effacer définitivement ? Cette action est irréversible.')) return;
-    DB = defaultState(); saveDB(); renderAll(); toast('Données effacées');
+    if(!requirePriv('parametres:edit')) return;
+    if(!confirm('Tout effacer définitivement ? (les comptes utilisateurs sont conservés)')) return;
+    const comptes = utilisateurs().slice();
+    DB = defaultState();
+    DB.utilisateurs = comptes;
+    saveDB(); renderAll(); toast('Données effacées');
   });
 }
 function resetActiviteForm(){
@@ -1581,6 +1746,7 @@ function initPeriodBar(){
 
 function init(){
   initPeriodBar();
+  initAuth();
   initTravaux();
   initTerrain();
   initCharges();
@@ -1589,8 +1755,10 @@ function init(){
   initMaintenance();
   initConducteurs();
   initParametres();
+  initUtilisateurs();
 
   $('#btnBackupQuick').addEventListener('click', () => {
+    if(!requirePriv('global:export')) return;
     const blob = new Blob([exportJSON()], { type:'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -1603,15 +1771,284 @@ function init(){
 
   route();
   renderMini();
+}
 
-  // raccourci : première ouverture → on propose la démo
-  if(!DB.engins.length && !localStorage.getItem('gestion_engins_greeted')){
-    localStorage.setItem('gestion_engins_greeted','1');
-    if(confirm('Bienvenue ! Charger des données de démonstration pour découvrir l\'application ?\n(OK = démo, Annuler = commencer à vide)')){
-      seedDemo();
-      route(); renderMini();
-    }
+/* Proposition de données de démonstration : après la première connexion */
+function maybeGreetDemo(){
+  if(DB.engins.length) return;
+  if(localStorage.getItem('gestion_engins_greeted')) return;
+  localStorage.setItem('gestion_engins_greeted', '1');
+  if(!can('parametres:edit')) return;
+  if(confirm('Bienvenue ! Charger des données de démonstration pour découvrir l\'application ?\n(OK = démo, Annuler = commencer à vide)')){
+    seedDemo();
+    route(); renderMini();
   }
 }
 
 document.addEventListener('DOMContentLoaded', init);
+
+/* ============================================================
+   UTILISATEURS — comptes & définition des privilèges
+   ============================================================ */
+let usrSelection = null;   // compte en cours d'édition (null = création)
+let formRole = 'perso';    // rôle affiché dans le formulaire
+let formPrivs = [];        // privilèges affichés dans la matrice
+
+function formUserTarget(){ return usrSelection ? userById(usrSelection) : null; }
+function syncFormPrivs(role){
+  formRole = ROLES[role] ? role : 'perso';
+  if(formRole !== 'perso') formPrivs = ROLES[formRole].privs().slice();
+}
+function updateRoleDesc(){
+  const r = ROLES[$('#usrRole') ? $('#usrRole').value : formRole];
+  $('#usrRoleDesc').textContent = r ? r.label + ' — ' + r.desc : '';
+}
+
+function renderUtilisateurs(){
+  const moi = currentUser();
+  const gerable = can('utilisateurs:edit');
+
+  const selRole = $('#usrRole');
+  if(selRole){
+    selRole.innerHTML = Object.keys(ROLES).map(k =>
+      `<option value="${k}" ${(k === 'admin' && (!moi || moi.role !== 'admin')) ? 'disabled' : ''}>${escapeHTML(ROLES[k].label)}</option>`
+    ).join('');
+    selRole.value = formRole;
+  }
+  const selEmp = $('#usrEmploye');
+  if(selEmp) selEmp.innerHTML = '<option value="">—</option>' + optionHTML(DB.employes, 'id', 'nom', selEmp.value);
+  updateRoleDesc();
+
+  $('#tableUsers tbody').innerHTML = utilisateurs().map(x => `
+    <tr data-user="${x.id}" class="user-row ${x.id === usrSelection ? 'row-sel' : ''}">
+      <td><b>${escapeHTML(x.nom)}</b>${moi && x.id === moi.id ? ' <span class="badge b-vert">moi</span>' : ''}</td>
+      <td>${escapeHTML(x.login)}</td>
+      <td><span class="badge badge-role">${escapeHTML((ROLES[x.role] || { label:x.role }).label)}</span></td>
+      <td>${x.actif ? '<span class="badge b-vert">Actif</span>' : '<span class="badge b-rouge">Désactivé</span>'}</td>
+      <td class="muted">${x.derniereConnexion ? new Date(x.derniereConnexion).toLocaleString('fr-FR') : '—'}</td>
+      <td style="white-space:nowrap" data-priv="utilisateurs:edit">
+        <button class="btn-icon" title="Modifier" onclick="editUser('${x.id}')">✏️</button>
+        <button class="btn-icon" title="Nouveau mot de passe" onclick="resetMdpUser('${x.id}')">🔑</button>
+        <button class="btn-icon" title="${x.actif ? 'Désactiver le compte' : 'Réactiver le compte'}" onclick="toggleUser('${x.id}')">${x.actif ? '🚫' : '✅'}</button>
+        <button class="btn-icon del" title="Supprimer" onclick="delUser('${x.id}')">🗑</button>
+      </td>
+    </tr>`).join('') || '<tr><td colspan="6" class="muted">Aucun compte : créez le premier utilisateur.</td></tr>';
+
+  renderPrivMatrix();
+  applyPrivVisibility();
+}
+
+function renderPrivMatrix(){
+  const cible = formUserTarget();
+  const gerable = can('utilisateurs:edit');
+  const cibleAdmin = !!(cible && cible.role === 'admin');
+  const bloquant = !gerable || !cible;
+  const accordables = privsAccordables();
+
+  $('#privMode').textContent = cible
+    ? cible.nom + ' · ' + (ROLES[cible.role] || { label:cible.role }).label
+    : 'Nouveau compte · ' + (ROLES[formRole] || { label:'—' }).label;
+
+  $('#privHint').textContent = !cible
+    ? 'Cochez les privilèges à accorder à ce compte, puis enregistrez.'
+    : cibleAdmin ? 'Un administrateur possède tous les privilèges, y compris la gestion des comptes.'
+    : bloquant ? 'Consultation : vous n\'avez pas le droit de modifier les privilèges.'
+    : 'Cochez les droits accordés. Sans « Voir », le module reste masqué pour ce compte.';
+
+  $('#tablePrivs tbody').innerHTML = PRIV_MODULES.map(m => {
+    const vu = cibleAdmin || formPrivs.includes(m.key + ':vue');
+    const cases = PRIV_ACTIONS.map(a => {
+      const cle = m.key + ':' + a.key;
+      const on = cibleAdmin || formPrivs.includes(cle);
+      const dis = bloquant || cibleAdmin || !accordables.includes(cle);
+      return `<td class="ctr"><input type="checkbox" data-cle="${cle}" ${on ? 'checked' : ''} ${dis ? 'disabled' : ''}></td>`;
+    }).join('');
+    return `<tr class="${vu ? '' : 'priv-off'}"><td class="priv-label">${escapeHTML(m.label)}</td>${cases}</tr>`;
+  }).join('');
+
+  $('#privGlobal').innerHTML = PRIV_GLOBAL.map(g => {
+    const cle = 'global:' + g.key;
+    const on = cibleAdmin || formPrivs.includes(cle);
+    const dis = bloquant || cibleAdmin || !accordables.includes(cle);
+    return `<label class="${on ? '' : 'muted'}"><input type="checkbox" data-cle="${cle}" ${on ? 'checked' : ''} ${dis ? 'disabled' : ''}> ${escapeHTML(g.label)}</label>`;
+  }).join('');
+}
+
+function onPrivChange(e){
+  const cb = e.target;
+  if(!cb || cb.type !== 'checkbox' || !cb.dataset.cle) return;
+  const set = new Set(formPrivs);
+  if(cb.checked) set.add(cb.dataset.cle); else set.delete(cb.dataset.cle);
+  if(/:vue$/.test(cb.dataset.cle) && !cb.checked){
+    const mod = cb.dataset.cle.split(':')[0];
+    PRIV_ACTIONS.forEach(a => set.delete(mod + ':' + a.key));
+  }
+  formPrivs = Array.from(set);
+  formRole = 'perso';
+  const sel = $('#usrRole');
+  if(sel) sel.value = 'perso';
+  updateRoleDesc();
+  renderPrivMatrix();
+}
+
+function newUserForm(){
+  if(!requirePriv('utilisateurs:edit')) return;
+  $('#formUser').reset();
+  $('#usrId').value = '';
+  $('#usrActif').checked = true;
+  $('#usrMdp').required = true;
+  $('#usrMdp2').required = true;
+  $('#usrMdp').placeholder = '4 caractères minimum';
+  $('#usrMdp2').placeholder = 'Retapez le mot de passe';
+  $('#userFormTitle').textContent = 'Nouvel utilisateur';
+  $('#usrCancel').classList.add('hidden');
+  usrSelection = null;
+  syncFormPrivs('saisie');
+  $('#userFormCard').classList.remove('hidden');
+  renderUtilisateurs();
+  $('#usrNom').focus();
+}
+
+function editUser(id){
+  if(!requirePriv('utilisateurs:edit')) return;
+  const u = userById(id);
+  if(!u) return;
+  usrSelection = id;
+  $('#usrId').value = u.id;
+  $('#usrNom').value = u.nom;
+  $('#usrLogin').value = u.login;
+  $('#usrEmploye').value = u.employeId || '';
+  $('#usrActif').checked = !!u.actif;
+  $('#usrMdp').value = ''; $('#usrMdp2').value = '';
+  const mdpRequis = !u.hash;
+  $('#usrMdp').required = mdpRequis;
+  $('#usrMdp2').required = mdpRequis;
+  $('#usrMdp').placeholder = mdpRequis ? '4 caractères minimum' : 'Laisser vide = inchangé';
+  $('#usrMdp2').placeholder = mdpRequis ? 'Retapez le mot de passe' : 'Laisser vide = inchangé';
+  $('#userFormTitle').textContent = 'Modifier : ' + u.nom;
+  $('#usrCancel').classList.remove('hidden');
+  formRole = u.role;
+  formPrivs = userPrivs(u).slice();
+  $('#userFormCard').classList.remove('hidden');
+  renderUtilisateurs();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function resetUserForm(){
+  $('#formUser').reset();
+  $('#usrId').value = '';
+  $('#usrMdp').required = true;
+  $('#usrMdp2').required = true;
+  $('#userFormTitle').textContent = 'Nouvel utilisateur';
+  $('#usrCancel').classList.add('hidden');
+  $('#userFormCard').classList.add('hidden');
+  usrSelection = null;
+  syncFormPrivs('saisie');
+  renderUtilisateurs();
+}
+
+async function saveUser(e){
+  e.preventDefault();
+  if(!requirePriv('utilisateurs:edit')) return;
+  const id = $('#usrId').value;
+  const nom = $('#usrNom').value.trim();
+  const login = $('#usrLogin').value.trim();
+  const mdp = $('#usrMdp').value;
+  const mdp2 = $('#usrMdp2').value;
+  const actif = $('#usrActif').checked;
+  const employeId = $('#usrEmploye').value || '';
+  const cible = id ? userById(id) : null;
+  const moi = currentUser();
+
+  if(!nom || !login) return toast('Renseignez nom et identifiant', true);
+  if(!loginDispo(login, id)) return toast('Identifiant déjà utilisé', true);
+  if(mdp || mdp2){
+    if(mdp.length < 4) return toast('Mot de passe : 4 caractères minimum', true);
+    if(mdp !== mdp2) return toast('Les deux mots de passe ne correspondent pas', true);
+  }else if(!cible || !cible.hash){
+    return toast('Choisissez un mot de passe', true);
+  }
+  if(formRole === 'admin' && (!moi || moi.role !== 'admin'))
+    return toast('Seul un administrateur peut nommer un administrateur', true);
+  if(cible && moi && cible.id === moi.id && formRole !== 'admin')
+    return toast('Vous ne pouvez pas retirer votre propre rôle administrateur', true);
+  if(cible && cible.role === 'admin' && cible.actif && adminActifs().length === 1 && (formRole !== 'admin' || !actif))
+    return toast('Impossible : c\'est le seul compte administrateur actif', true);
+
+  const btn = e.target.querySelector('button[type=submit]');
+  btn.disabled = true;
+  try{
+    const u = await enregistrerUtilisateur({
+      id, nom, login, role: formRole, privileges: formPrivs, actif, employeId, mdp
+    });
+    usrSelection = u.id;
+    toast(id ? 'Compte mis à jour ✓' : 'Compte créé ✓');
+    resetUserForm();
+    renderMini();
+  }catch(err){
+    toast('Erreur : ' + err.message, true);
+  }finally{
+    btn.disabled = false;
+  }
+}
+
+function toggleUser(id){
+  if(!requirePriv('utilisateurs:edit')) return;
+  const u = userById(id);
+  if(!u) return;
+  const moi = currentUser();
+  if(moi && u.id === moi.id) return toast('Vous ne pouvez pas désactiver votre propre compte', true);
+  if(u.actif && u.role === 'admin' && adminActifs().length === 1)
+    return toast('Impossible : c\'est le seul compte administrateur actif', true);
+  u.actif = !u.actif;
+  saveDB();
+  renderUtilisateurs();
+  toast(u.actif ? 'Compte réactivé ✓' : 'Compte désactivé ✓');
+}
+
+function delUser(id){
+  if(!requirePriv('utilisateurs:edit')) return;
+  const u = userById(id);
+  if(!u) return;
+  const moi = currentUser();
+  if(moi && u.id === moi.id) return toast('Vous ne pouvez pas supprimer votre propre compte', true);
+  if(u.role === 'admin' && u.actif && adminActifs().length === 1)
+    return toast('Impossible : c\'est le seul compte administrateur actif', true);
+  if(!confirm('Supprimer le compte de ' + u.nom + ' ?')) return;
+  supprimerUtilisateur(id);
+  if(usrSelection === id) resetUserForm();
+  else renderUtilisateurs();
+  toast('Compte supprimé ✓');
+}
+
+function resetMdpUser(id){
+  if(!requirePriv('utilisateurs:edit')) return;
+  const u = userById(id);
+  if(!u) return;
+  const mdp = prompt('Nouveau mot de passe pour ' + u.nom + ' (4 caractères minimum) :');
+  if(mdp === null) return;
+  if(mdp.length < 4) return toast('Mot de passe : 4 caractères minimum', true);
+  setMdp(u, mdp).then(() => {
+    saveDB();
+    toast('Mot de passe modifié ✓');
+    renderUtilisateurs();
+  }).catch(err => toast('Erreur : ' + err.message, true));
+}
+
+function initUtilisateurs(){
+  $('#btnNewUser').addEventListener('click', newUserForm);
+  $('#usrCancel').addEventListener('click', resetUserForm);
+  $('#formUser').addEventListener('submit', saveUser);
+  $('#usrRole').addEventListener('change', () => {
+    syncFormPrivs($('#usrRole').value);
+    updateRoleDesc();
+    renderPrivMatrix();
+  });
+  $('#tablePrivs').addEventListener('change', onPrivChange);
+  $('#privGlobal').addEventListener('change', onPrivChange);
+  $('#tableUsers').addEventListener('click', e => {
+    if(e.target.closest('button')) return;
+    const tr = e.target.closest('tr[data-user]');
+    if(tr) editUser(tr.dataset.user);
+  });
+}

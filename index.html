@@ -25,9 +25,15 @@
     <a href="#/engins" data-view="engins"><span class="ico">🚜</span> Engins</a>
     <a href="#/maintenance" data-view="maintenance"><span class="ico">🔧</span> Maintenance</a>
     <a href="#/rapports" data-view="rapports"><span class="ico">📈</span> Rapports</a>
+    <a href="#/utilisateurs" data-view="utilisateurs"><span class="ico">🔐</span> Utilisateurs</a>
     <a href="#/parametres" data-view="parametres"><span class="ico">⚙️</span> Paramètres</a>
   </nav>
   <div class="sidebar-foot">
+    <div class="user-chip" id="userChip">
+      <span class="uc-ico">👤</span>
+      <span class="uc-nom" id="ucNom">—</span>
+      <button class="btn-icon" id="btnLogout" title="Se déconnecter">⏻</button>
+    </div>
     <div id="periodSummaryMini"></div>
     <button class="btn btn-ghost btn-sm" id="btnBackupQuick">💾 Sauvegarde</button>
   </div>
@@ -150,7 +156,7 @@
         <div class="filters">
           <input type="month" id="trvFilterMonth">
           <select id="trvFilterEngin"><option value="">Tous les engins</option></select>
-          <button class="btn btn-ghost btn-sm" id="trvExport">⬇ CSV</button>
+          <button class="btn btn-ghost btn-sm" id="trvExport" data-priv="global:export">⬇ CSV</button>
         </div>
       </div>
       <div class="table-wrap">
@@ -243,7 +249,7 @@
             <option value="autre">Autres</option>
           </select>
           <select id="chFilterEngin"><option value="">Tous les engins</option></select>
-          <button class="btn btn-ghost btn-sm" id="chExport">⬇ CSV</button>
+          <button class="btn btn-ghost btn-sm" id="chExport" data-priv="global:export">⬇ CSV</button>
         </div>
       </div>
       <div class="table-wrap">
@@ -262,7 +268,7 @@
   <section id="view-engins" class="view hidden">
     <div class="view-head">
       <h1>Engins</h1>
-      <button class="btn btn-primary" id="btnNewEngin">➕ Nouvel engin</button>
+      <button class="btn btn-primary" id="btnNewEngin" data-priv="engins:edit">➕ Nouvel engin</button>
     </div>
 
     <div class="card form-card hidden" id="enginFormCard">
@@ -311,7 +317,7 @@
   <section id="view-maintenance" class="view hidden">
     <div class="view-head">
       <h1>Maintenance</h1>
-      <a class="btn btn-primary" href="#/charges">➕ Intervention</a>
+      <a class="btn btn-primary" href="#/charges" data-priv="charges:edit">➕ Intervention</a>
     </div>
 
     <div class="card">
@@ -321,8 +327,7 @@
 
     <div class="card">
       <div class="card-head">
-        <h2>Échéancier préventif</h2>
-        <button class="btn btn-ghost btn-sm" id="btnNewPrevention">➕ Régler les intervalles</button>
+        <h2>Échéancier préventif</h2>          <button class="btn btn-ghost btn-sm" id="btnNewPrevention" data-priv="maintenance:edit">➕ Régler les intervalles</button>
       </div>
       <form id="formPrevention" class="hidden inline-form">
         <input type="hidden" id="prevId">
@@ -380,8 +385,8 @@
       <h1>Rapports</h1>
       <div class="filters">
         <input type="month" id="repMonth">
-        <button class="btn btn-ghost btn-sm" id="repExportMensuel">⬇ CSV mensuel</button>
-        <button class="btn btn-ghost btn-sm" id="repExportEngins">⬇ CSV par engin</button>
+        <button class="btn btn-ghost btn-sm" id="repExportMensuel" data-priv="global:export">⬇ CSV mensuel</button>
+        <button class="btn btn-ghost btn-sm" id="repExportEngins" data-priv="global:export">⬇ CSV par engin</button>
       </div>
     </div>
 
@@ -422,7 +427,7 @@
         <h2>Comparatif par conducteur</h2>
         <div class="filters">
           <select id="condTaux" title="Rémunération par opération"></select>
-          <button class="btn btn-ghost btn-sm" id="repExportConducteurs">⬇ CSV conducteurs</button>
+          <button class="btn btn-ghost btn-sm" id="repExportConducteurs" data-priv="global:export">⬇ CSV conducteurs</button>
         </div>
       </div>
       <p class="muted" style="margin:4px 0 10px">Salaire = (nombre de transferts + nombre d'ouvertures) × tarif par opération — période sélectionnée ci-dessous.</p>
@@ -503,7 +508,7 @@
         <h2>Saisies du jour</h2>
         <div class="filters">
           <span id="trJourRecap" class="muted"></span>
-          <button class="btn btn-ghost btn-sm" id="trSync" title="Envoyer / récupérer les données du cloud">☁️ Synchroniser</button>
+          <button class="btn btn-ghost btn-sm" id="trSync" data-priv="global:sync" title="Envoyer / récupérer les données du cloud">☁️ Synchroniser</button>
         </div>
       </div>
       <div id="trJourList" class="recent"></div>
@@ -516,7 +521,7 @@
       <h1>Factures</h1>
       <div class="filters">
         <input type="text" id="facSearch" placeholder="🔎 Rechercher un client…">
-        <button class="btn btn-primary btn-sm" id="facNew">➕ Nouvelle facture</button>
+        <button class="btn btn-primary btn-sm" id="facNew" data-priv="factures:edit">➕ Nouvelle facture</button>
       </div>
     </div>
 
@@ -573,6 +578,90 @@
             <tbody></tbody>
           </table>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ UTILISATEURS ============ -->
+  <section id="view-utilisateurs" class="view hidden">
+    <div class="view-head">
+      <h1>Utilisateurs <span class="card-sub">comptes &amp; privilèges</span></h1>
+      <button class="btn btn-primary" id="btnNewUser" data-priv="utilisateurs:edit">➕ Nouvel utilisateur</button>
+    </div>
+
+    <div class="card form-card hidden" id="userFormCard">
+      <h2 id="userFormTitle">Nouvel utilisateur</h2>
+      <form id="formUser">
+        <input type="hidden" id="usrId">
+        <div class="form-grid">
+          <label>Nom complet
+            <input type="text" id="usrNom" required placeholder="Ex. Kossi A.">
+          </label>
+          <label>Identifiant <span class="hint">(pour se connecter)</span>
+            <input type="text" id="usrLogin" required placeholder="Ex. kossi" autocomplete="off">
+          </label>
+          <label id="usrMdpWrap">Mot de passe
+            <input type="password" id="usrMdp" required minlength="4" placeholder="4 caractères minimum" autocomplete="new-password">
+          </label>
+          <label id="usrMdp2Wrap">Confirmer le mot de passe
+            <input type="password" id="usrMdp2" required minlength="4" autocomplete="new-password">
+          </label>
+          <label>Rôle
+            <select id="usrRole"></select>
+          </label>
+          <label>Employé lié <span class="hint">(facultatif, pour la saisie terrain)</span>
+            <select id="usrEmploye"><option value="">—</option></select>
+          </label>
+        </div>
+        <p class="muted" id="usrRoleDesc"></p>
+        <label class="check-line"><input type="checkbox" id="usrActif" checked> Compte actif (l'utilisateur peut se connecter)</label>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">💾 Enregistrer le compte</button>
+          <button type="button" class="btn btn-ghost" id="usrCancel">Annuler</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Définition des privilèges</h2>
+        <span class="muted" id="privMode">Aucun utilisateur sélectionné</span>
+      </div>
+      <div class="table-wrap">
+        <table class="table priv-table" id="tablePrivs">
+          <thead>
+            <tr><th>Module</th><th class="ctr">Voir</th><th class="ctr">Créer / modifier</th><th class="ctr">Supprimer</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="priv-global" id="privGlobal"></div>
+      <p class="muted" id="privHint">Choisissez un compte dans la liste pour ajuster ses privilèges, ou créez-en un nouveau.</p>
+    </div>
+
+    <div class="card">
+      <h2>Comptes existants</h2>
+      <div class="table-wrap">
+        <table class="table" id="tableUsers">
+          <thead>
+            <tr><th>Nom</th><th>Identifiant</th><th>Rôle</th><th>Statut</th><th>Dernière connexion</th><th></th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="muted">Comptes enregistrés dans ce navigateur (les mots de passe sont conservés sous forme hachée). Les comptes ne sont pas synchronisés avec le cloud : créez-les sur chaque appareil.</p>
+    </div>
+  </section>
+
+  <!-- ============ ACCÈS REFUSÉ ============ -->
+  <section id="view-acces-refuse" class="view hidden">
+    <div class="view-head"><h1>⛔ Accès refusé</h1></div>
+    <div class="card">
+      <p>Votre compte ne dispose pas des privilèges nécessaires pour afficher cette page.</p>
+      <p class="muted" id="accesRefuseCle"></p>
+      <div class="form-actions">
+        <a class="btn btn-primary" id="accesRetour" href="#/dashboard">↩ Retour à l'accueil</a>
+        <button class="btn btn-ghost" id="btnLogout2">⏻ Changer de compte</button>
       </div>
     </div>
   </section>
@@ -680,9 +769,9 @@
       </div>
       <label class="check-line"><input type="checkbox" id="sbAuto"> Synchroniser automatiquement après chaque saisie</label>
       <div class="form-actions">
-        <button type="button" class="btn btn-primary" id="sbSave">💾 Enregistrer la connexion</button>
-        <button type="button" class="btn btn-ghost" id="sbPush">⬆ Envoyer mes données</button>
-        <button type="button" class="btn btn-ghost" id="sbPull">⬇ Récupérer depuis le cloud</button>
+        <button type="button" class="btn btn-primary" id="sbSave" data-priv="global:sync">💾 Enregistrer la connexion</button>
+        <button type="button" class="btn btn-ghost" id="sbPush" data-priv="global:sync">⬆ Envoyer mes données</button>
+        <button type="button" class="btn btn-ghost" id="sbPull" data-priv="global:sync">⬇ Récupérer depuis le cloud</button>
         <span id="sbStatus" class="muted"></span>
       </div>
     </div>
@@ -691,11 +780,11 @@
       <h2>Données &amp; sauvegarde</h2>
       <p class="muted">Les données sont enregistrées localement dans ce navigateur. Pensez à exporter une sauvegarde régulièrement.</p>
       <div class="form-actions">
-        <button class="btn btn-primary" id="btnExportJson">⬇ Exporter la sauvegarde (JSON)</button>
-        <label class="btn btn-ghost" for="importFile">⬆ Importer une sauvegarde</label>
+        <button class="btn btn-primary" id="btnExportJson" data-priv="global:export">⬇ Exporter la sauvegarde (JSON)</button>
+        <label class="btn btn-ghost" for="importFile" data-priv="global:export">⬆ Importer une sauvegarde</label>
         <input type="file" id="importFile" accept="application/json" class="hidden">
-        <button class="btn btn-ghost" id="btnDemo">🧪 Données de démonstration</button>
-        <button class="btn btn-danger" id="btnReset">🗑 Tout effacer</button>
+        <button class="btn btn-ghost" id="btnDemo" data-priv="parametres:edit">🧪 Données de démonstration</button>
+        <button class="btn btn-danger" id="btnReset" data-priv="parametres:edit">🗑 Tout effacer</button>
       </div>
     </div>
   </section>
@@ -703,6 +792,50 @@
 </main>
 
 <div id="toast" class="toast hidden"></div>
+
+<!-- ============ ÉCRAN DE CONNEXION ============ -->
+<div id="authScreen" class="auth hidden">
+  <div class="auth-box">
+    <div class="auth-logo">🚜</div>
+    <div class="auth-t" id="authTitle">Connexion</div>
+    <div class="auth-s" id="authSub">Gestion Engins — Transferts &amp; Débardage</div>
+
+    <form id="formLogin" class="auth-form">
+      <label>Identifiant
+        <input type="text" id="lgLogin" required autocomplete="username" autofocus>
+      </label>
+      <label>Mot de passe
+        <input type="password" id="lgMdp" required autocomplete="current-password">
+      </label>
+      <label class="check-line"><input type="checkbox" id="lgRemember"> Rester connecté sur cet appareil</label>
+      <button type="submit" class="btn btn-primary auth-btn">🔓 Se connecter</button>
+      <div class="auth-err hidden" id="lgErr"></div>
+    </form>
+
+    <form id="formFirstAdmin" class="auth-form hidden">
+      <p class="muted">Première ouverture : créez le compte administrateur qui pourra créer les autres comptes et définir leurs privilèges.</p>
+      <label>Nom complet
+        <input type="text" id="faNom" required placeholder="Ex. Kossi A.">
+      </label>
+      <label>Identifiant
+        <input type="text" id="faLogin" required placeholder="Ex. admin" autocomplete="off">
+      </label>
+      <label>Mot de passe
+        <input type="password" id="faMdp" required minlength="4" autocomplete="new-password">
+      </label>
+      <label>Confirmer le mot de passe
+        <input type="password" id="faMdp2" required minlength="4" autocomplete="new-password">
+      </label>
+      <button type="submit" class="btn btn-primary auth-btn">🛡 Créer l'administrateur</button>
+      <div class="auth-err hidden" id="faErr"></div>
+    </form>
+
+    <div class="auth-foot">
+      Comptes locaux à cet appareil · mots de passe conservés sous forme hachée.<br>
+      Identifiant oublié ? Effacez les données du site dans le navigateur pour recréer un administrateur.
+    </div>
+  </div>
+</div>
 
 <script src="js/store.js"></script>
 <script src="js/charts.js"></script>
