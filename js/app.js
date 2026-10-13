@@ -1710,6 +1710,23 @@ function initParametres(){
   };
   $('#sbPush').addEventListener('click', () => { if(requirePriv('global:sync')) runSb('Envoi', syncPush); });
   $('#sbPull').addEventListener('click', () => { if(requirePriv('global:sync')) runSb('Récupération', syncPull); });
+  $('#sbTest').addEventListener('click', async () => {
+    if(!requirePriv('global:sync')) return;
+    // teste les valeurs affichées (et les enregistre au passage)
+    DB.settings.sbUrl = $('#sbUrl').value.trim();
+    DB.settings.sbKey = $('#sbKey').value.trim();
+    saveDB();
+    if(!syncReady()){ toast('Renseignez l\'URL et la clé, puis réessayez', true); return; }
+    $('#sbStatus').textContent = 'Test de connexion…';
+    try{
+      await syncTest();
+      renderSbStatus();
+      toast('✅ Supabase répond : connexion OK');
+    }catch(err){
+      $('#sbStatus').textContent = '❌ ' + err.message;
+      toast(err.message, true);
+    }
+  });
 
   $('#btnExportJson').addEventListener('click', () => {
     if(!requirePriv('global:export')) return;

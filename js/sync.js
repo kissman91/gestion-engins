@@ -42,6 +42,9 @@ async function sbFetch(path, opts){
   if(!res.ok){
     let msg = '';
     try{ msg = (await res.text()).slice(0, 300); }catch(e){}
+    if(res.status === 401){
+      msg += ' → clé refusée : collez la clé « publishable » (ou anon) du bon projet, sans espace ni retour à la ligne, et vérifiez qu’elle n’a pas été regénérée depuis.';
+    }
     throw new Error('Erreur Supabase ' + res.status + (msg ? ' : ' + msg : ''));
   }
   const ct = res.headers.get('content-type') || '';
