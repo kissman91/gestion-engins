@@ -42,7 +42,7 @@ function defaultState(){
 }
 
 /* Collections synchronisées avec le cloud (identifiants exclus) */
-const SYNC_COLLECTIONS = ['engins','employes','activites','travaux','charges','preventions','factures'];
+const SYNC_COLLECTIONS = ['engins','employes','activites','travaux','charges','preventions','factures','utilisateurs'];
 
 let DB = loadDB();
 
@@ -597,7 +597,7 @@ const ROLES = {
   },
   gestion: {
     label: 'Gestionnaire',
-    desc: 'Consulte et gère toutes les données de l\'entreprise, sauf les comptes utilisateurs.',
+    desc: 'Gère toutes les données et crée les comptes (conducteurs, consultation). Pas de comptes admin ni gestionnaire.',
     privs: () => privs(
       'dashboard:vue','travaux:vue','travaux:edit','travaux:suppr',
       'terrain:vue','terrain:edit',
@@ -606,6 +606,7 @@ const ROLES = {
       'engins:vue','engins:edit','engins:suppr',
       'maintenance:vue','maintenance:edit','maintenance:suppr',
       'rapports:vue','parametres:vue','parametres:edit',
+      'utilisateurs:vue','utilisateurs:edit',
       'global:export','global:sync')
   },
   saisie: {
@@ -645,6 +646,16 @@ function loginDispo(login, excludeId){
   return !utilisateurs().some(u => u.id !== excludeId && (u.login||'').toLowerCase() === l);
 }
 function adminActifs(){ return utilisateurs().filter(u => u.actif && u.role === 'admin'); }
+
+/* Comptes « protégés » : seul un administrateur les crée ou les modifie */
+function estProtege(u){ return !!u && (u.role === 'admin' || u.role === 'gestion'); }
+function peutGererCompte(cible, moi){
+  if(!cible) return false;
+  const m = moi || currentUser();
+  if(!m) return false;
+  if(m.role === 'admin') return true;
+  return m.role === 'gestion' && !estProtege(cible);
+}
 
 /* Mot de passe : SHA-256 salé (contexte https), repli simple hors contexte sécurisé */
 function newSalt(){
@@ -733,7 +744,8 @@ function privsAccordables(){          // on n'accorde que ce qu'on possède soi-
   const u = currentUser();
   if(!u) return [];
   if(u.role === 'admin') return allPrivs();
-  return userPrivs(u);
+  // un non-admin ne peut pas déléguer la gestion des comptes
+  return userPrivs(u).filter(c => c.indexOf('utilisateurs:') !== 0);
 }
 
 /* ---------- Connexion ---------- */
@@ -751,10 +763,18 @@ async function login(identifiant, mdp, remember){
     throw new Error('Identifiant ou mot de passe incorrect');
   }
   _essais = { n:0, until:0 };
-  u.derniereConnexion = new Date().toISOString();
-  saveDB();
+  noterConnexion(u);
   ouvrirSession(u, remember);
   return u;
+}
+
+/* Dernière connexion : notée sur cet appareil uniquement (jamais synchronisée) */
+const LOGIN_MARK = 'gestion_engins_login_';
+function noterConnexion(u){
+  try{ localStorage.setItem(LOGIN_MARK + u.id, new Date().toISOString()); }catch(e){}
+}
+function derniereConnexionLocal(id){
+  try{ return localStorage.getItem(LOGIN_MARK + id) || ''; }catch(e){ return ''; }
 }
 function ouvrirSession(u, remember){
   _sessionUser = u;
@@ -776,7 +796,20 @@ async function enregistrerUtilisateur(data){
   if(!loginDispo(login, data.id || null)) throw new Error('Identifiant déjà utilisé');
   if(!ROLES[data.role]) throw new Error('Rôle inconnu');
 
-  let u = data.id ? userById(data.id) : null;
+  const existant = data.id ? userById(data.id) : null;
+  const moi = currentUser();
+  if(!utilisateurs().length){
+    // premier appareil : création libre du tout premier compte
+  }else if(!moi){
+    throw new Error('Connexion requise');
+  }else{
+    if(existant && !peutGererCompte(existant, moi))
+      throw new Error('Compte protégé : seul un administrateur peut le modifier');
+    if(!existant && moi.role !== 'admin' && estProtege({ role:data.role }))
+      throw new Error('Seul un administrateur peut créer un compte administrateur ou gestionnaire');
+  }
+
+  let u = existant;
   if(!u){
     if(mdp.length < 4) throw new Error('Mot de passe : 4 caractères minimum');
     u = { id: uid(), nom, login, role: data.role, privileges: [],
@@ -803,9 +836,13 @@ async function enregistrerUtilisateur(data){
 function supprimerUtilisateur(id){
   const u = userById(id);
   if(!u) return;
-  DB.utilisateurs = utilisateurs().filter(x => x.id !== id);
   const moi = currentUser();
-  if(moi && moi.id === id) sessionClear();
+  if(moi && moi.id === id) throw new Error('Vous ne pouvez pas supprimer votre propre compte');
+  if(u.role === 'admin' && u.actif && adminActifs().length === 1)
+    throw new Error('Impossible : c\'est le seul compte administrateur actif');
+  if(!peutGererCompte(u, moi))
+    throw new Error('Compte protégé : seul un administrateur peut le supprimer');
+  DB.utilisateurs = utilisateurs().filter(x => x.id !== id);
   saveDB();
 }
 

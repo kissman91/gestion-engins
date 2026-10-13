@@ -55,6 +55,8 @@ async function syncPush(){
   const rows = [];
   SYNC_COLLECTIONS.forEach(coll => {
     (DB[coll] || []).forEach(r => {
+      // le compte administrateur reste local à cet appareil : jamais envoyé au cloud
+      if(coll === 'utilisateurs' && r.role === 'admin') return;
       const at = r._at || '1970-01-01T00:00:00.000Z';
       if(at > since){
         rows.push({ collection: coll, id: r.id, payload: r, updated_at: at });
@@ -96,6 +98,8 @@ async function syncPull(){
     if(!SYNC_COLLECTIONS.includes(row.collection)) return;
     const p = row.payload;
     if(!p || !p.id) return;
+    // on n'accepte jamais de compte administrateur depuis le cloud
+    if(row.collection === 'utilisateurs' && p.role === 'admin') return;
     const arr = DB[row.collection];
     if(!Array.isArray(arr)) return;
     const i = arr.findIndex(x => x.id === p.id);

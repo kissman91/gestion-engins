@@ -649,7 +649,7 @@
           <tbody></tbody>
         </table>
       </div>
-      <p class="muted">Comptes enregistrés dans ce navigateur (les mots de passe sont conservés sous forme hachée). Les comptes ne sont pas synchronisés avec le cloud : créez-les sur chaque appareil.</p>
+      <p class="muted">Les comptes (sauf l'administrateur) sont partagés entre vos appareils par le cloud : créez-les ici, ils se connecteront depuis n'importe quel poste ou téléphone connecté au même projet Supabase. Mots de passe transmis sous forme hachée (SHA-256 salé), jamais en clair.</p>
     </div>
   </section>
 
@@ -812,8 +812,24 @@
       <div class="auth-err hidden" id="lgErr"></div>
     </form>
 
-    <form id="formFirstAdmin" class="auth-form hidden">
-      <p class="muted">Première ouverture : créez le compte administrateur qui pourra créer les autres comptes et définir leurs privilèges.</p>
+    <div id="cloudBootBox" class="auth-form">
+      <p class="muted">Cet appareil n'a pas encore de compte : récupérez ceux créés par l'administrateur via le cloud (Supabase), puis connectez-vous.</p>
+      <form id="formCloudBoot" class="auth-col">
+        <label>URL du projet Supabase
+          <input type="url" id="cbUrl" placeholder="https://xxxx.supabase.co">
+        </label>
+        <label>Clé anon (publishable)
+          <input type="password" id="cbKey" placeholder="eyJhbGciOi…" autocomplete="off">
+        </label>
+        <button type="submit" class="btn btn-primary auth-btn">⬇ Récupérer les comptes</button>
+        <div class="auth-err hidden" id="cbErr"></div>
+        <div class="muted" id="cbStatus"></div>
+      </form>
+      <button type="button" class="btn btn-ghost auth-alt" id="btnShowAdmin">🛡 Première installation sans cloud — créer un administrateur</button>
+    </div>
+
+    <form id="formFirstAdmin" class="auth-col hidden">
+      <p class="muted">Première installation : créez le compte administrateur qui créera les autres comptes et définira leurs privilèges. Configurez ensuite Supabase dans Paramètres pour partager les comptes et les données.</p>
       <label>Nom complet
         <input type="text" id="faNom" required placeholder="Ex. Kossi A.">
       </label>
@@ -828,11 +844,12 @@
       </label>
       <button type="submit" class="btn btn-primary auth-btn">🛡 Créer l'administrateur</button>
       <div class="auth-err hidden" id="faErr"></div>
+      <button type="button" class="btn btn-ghost auth-alt" id="btnShowCloud">⬅ Retour : récupérer les comptes du cloud</button>
     </form>
 
     <div class="auth-foot">
-      Comptes locaux à cet appareil · mots de passe conservés sous forme hachée.<br>
-      Identifiant oublié ? Effacez les données du site dans le navigateur pour recréer un administrateur.
+      Comptes partagés entre vos appareils via Supabase (mots de passe hachés) · le compte administrateur reste local à son poste.<br>
+      Identifiant oublié ? Effacez les données du site dans le navigateur pour repartir de zéro.
     </div>
   </div>
 </div>

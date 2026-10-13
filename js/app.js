@@ -149,15 +149,18 @@ function openAuth(mode){
   const s = $('#authScreen');
   s.classList.remove('hidden');
   $('#formLogin').classList.toggle('hidden', mode !== 'login');
-  $('#formFirstAdmin').classList.toggle('hidden', mode !== 'first');
-  $('#authTitle').textContent = mode === 'first' ? 'Créer l\'administrateur' : 'Connexion';
-  $('#authSub').textContent = mode === 'first'
-    ? 'Première ouverture — les comptes sont locaux à cet appareil'
-    : (DB.settings.nom || 'Mon Entreprise');
+  $('#cloudBootBox').classList.toggle('hidden', mode !== 'first');
+  $('#formFirstAdmin').classList.toggle('hidden', mode !== 'admin');
+  $('#authTitle').textContent = mode === 'first' ? 'Récupérer vos comptes'
+    : mode === 'admin' ? 'Créer l\'administrateur' : 'Connexion';
+  $('#authSub').textContent = mode === 'login'
+    ? (DB.settings.nom || 'Mon Entreprise')
+    : 'Première ouverture de l\'application sur cet appareil';
   $('#lgErr').classList.add('hidden');
   $('#faErr').classList.add('hidden');
+  $('#cbErr').classList.add('hidden');
   setTimeout(() => {
-    const f = mode === 'first' ? $('#faNom') : $('#lgLogin');
+    const f = mode === 'admin' ? $('#faNom') : mode === 'first' ? $('#cbUrl') : $('#lgLogin');
     if(f) f.focus();
   }, 60);
 }
@@ -181,6 +184,12 @@ function afterLogin(){
   renderMini();
   const u = currentUser();
   toast('Bonjour ' + (u ? u.nom.split(' ')[0] : '') + ' 👋');
+  // tire les nouveaux comptes et données dès la connexion (échec silencieux hors ligne)
+  if(syncReady()){
+    syncPull().then(r => {
+      if(r.added || r.updated){ renderAll(); toast('☁️ Données et comptes à jour'); }
+    }).catch(() => {});
+  }
   maybeGreetDemo();
 }
 
@@ -226,6 +235,36 @@ function initAuth(){
 
   $('#btnLogout').addEventListener('click', doLogout);
   $('#btnLogout2').addEventListener('click', doLogout);
+
+  // --- appareil vierge : récupération des comptes depuis le cloud ---
+  $('#btnShowAdmin').addEventListener('click', () => openAuth('admin'));
+  $('#btnShowCloud').addEventListener('click', () => openAuth('first'));
+  $('#formCloudBoot').addEventListener('submit', async e => {
+    e.preventDefault();
+    const url = $('#cbUrl').value.trim();
+    const key = $('#cbKey').value.trim();
+    if(!url || !key) return authErr('#cbErr', 'Renseignez l\'URL du projet et sa clé anon');
+    const btn = e.target.querySelector('button[type=submit]');
+    btn.disabled = true;
+    $('#cbStatus').textContent = 'Récupération des comptes…';
+    try{
+      DB.settings.sbUrl = url;
+      DB.settings.sbKey = key;   // restent locales : jamais synchronisées
+      saveDB();
+      await syncPull();
+      $('#cbStatus').textContent = '';
+      if(!utilisateurs().length){
+        return authErr('#cbErr', 'Aucun compte sur ce projet : créez d\'abord les comptes depuis l\'ordinateur de l\'administrateur, ou utilisez la création locale.');
+      }
+      openAuth('login');
+      toast('Comptes récupérés ✓ — connectez-vous');
+    }catch(err){
+      $('#cbStatus').textContent = '';
+      authErr('#cbErr', 'Échec : ' + err.message);
+    }finally{
+      btn.disabled = false;
+    }
+  });
 }
 
 /* Demande un privilège pour une action (retourne false si refusé) */
@@ -1744,7 +1783,10 @@ function initPeriodBar(){
   $('#periodTo').value = today();
 }
 
+let _initFait = false;
 function init(){
+  if(_initFait) return;          // jamais initialisé deux fois (double liaison des handlers)
+  _initFait = true;
   initPeriodBar();
   initAuth();
   initTravaux();
@@ -1806,33 +1848,40 @@ function updateRoleDesc(){
 
 function renderUtilisateurs(){
   const moi = currentUser();
+  const adminMoi = !!(moi && moi.role === 'admin');
   const gerable = can('utilisateurs:edit');
 
   const selRole = $('#usrRole');
   if(selRole){
-    selRole.innerHTML = Object.keys(ROLES).map(k =>
-      `<option value="${k}" ${(k === 'admin' && (!moi || moi.role !== 'admin')) ? 'disabled' : ''}>${escapeHTML(ROLES[k].label)}</option>`
-    ).join('');
+    selRole.innerHTML = Object.keys(ROLES).map(k => {
+      const interdit = !adminMoi && (k === 'admin' || k === 'gestion');
+      return `<option value="${k}" ${interdit ? 'disabled' : ''}>${escapeHTML(ROLES[k].label)}${interdit ? ' (admin seul)' : ''}</option>`;
+    }).join('');
     selRole.value = formRole;
   }
   const selEmp = $('#usrEmploye');
   if(selEmp) selEmp.innerHTML = '<option value="">—</option>' + optionHTML(DB.employes, 'id', 'nom', selEmp.value);
   updateRoleDesc();
 
-  $('#tableUsers tbody').innerHTML = utilisateurs().map(x => `
+  $('#tableUsers tbody').innerHTML = utilisateurs().map(x => {
+    const gerable_ci = peutGererCompte(x, moi);
+    const connex = derniereConnexionLocal(x.id) || x.derniereConnexion || '';
+    return `
     <tr data-user="${x.id}" class="user-row ${x.id === usrSelection ? 'row-sel' : ''}">
       <td><b>${escapeHTML(x.nom)}</b>${moi && x.id === moi.id ? ' <span class="badge b-vert">moi</span>' : ''}</td>
       <td>${escapeHTML(x.login)}</td>
       <td><span class="badge badge-role">${escapeHTML((ROLES[x.role] || { label:x.role }).label)}</span></td>
       <td>${x.actif ? '<span class="badge b-vert">Actif</span>' : '<span class="badge b-rouge">Désactivé</span>'}</td>
-      <td class="muted">${x.derniereConnexion ? new Date(x.derniereConnexion).toLocaleString('fr-FR') : '—'}</td>
-      <td style="white-space:nowrap" data-priv="utilisateurs:edit">
+      <td class="muted">${connex ? new Date(connex).toLocaleString('fr-FR') : '—'}</td>
+      <td style="white-space:nowrap" ${gerable_ci ? 'data-priv="utilisateurs:edit"' : ''}>
+        ${gerable_ci ? `
         <button class="btn-icon" title="Modifier" onclick="editUser('${x.id}')">✏️</button>
         <button class="btn-icon" title="Nouveau mot de passe" onclick="resetMdpUser('${x.id}')">🔑</button>
         <button class="btn-icon" title="${x.actif ? 'Désactiver le compte' : 'Réactiver le compte'}" onclick="toggleUser('${x.id}')">${x.actif ? '🚫' : '✅'}</button>
-        <button class="btn-icon del" title="Supprimer" onclick="delUser('${x.id}')">🗑</button>
+        <button class="btn-icon del" title="Supprimer" onclick="delUser('${x.id}')">🗑</button>` : '<span title="Seul un administrateur peut modifier ce compte">🔒</span>'}
       </td>
-    </tr>`).join('') || '<tr><td colspan="6" class="muted">Aucun compte : créez le premier utilisateur.</td></tr>';
+    </tr>`;
+  }).join('') || '<tr><td colspan="6" class="muted">Aucun compte : créez le premier utilisateur.</td></tr>';
 
   renderPrivMatrix();
   applyPrivVisibility();
@@ -1913,6 +1962,7 @@ function editUser(id){
   if(!requirePriv('utilisateurs:edit')) return;
   const u = userById(id);
   if(!u) return;
+  if(!peutGererCompte(u)) return toast('Compte protégé : seul un administrateur peut le modifier', true);
   usrSelection = id;
   $('#usrId').value = u.id;
   $('#usrNom').value = u.nom;
@@ -1968,8 +2018,10 @@ async function saveUser(e){
   }else if(!cible || !cible.hash){
     return toast('Choisissez un mot de passe', true);
   }
-  if(formRole === 'admin' && (!moi || moi.role !== 'admin'))
-    return toast('Seul un administrateur peut nommer un administrateur', true);
+  if(formRole === 'admin' || formRole === 'gestion'){
+    if(!moi || moi.role !== 'admin')
+      return toast('Seul un administrateur peut créer un compte administrateur ou gestionnaire', true);
+  }
   if(cible && moi && cible.id === moi.id && formRole !== 'admin')
     return toast('Vous ne pouvez pas retirer votre propre rôle administrateur', true);
   if(cible && cible.role === 'admin' && cible.actif && adminActifs().length === 1 && (formRole !== 'admin' || !actif))
@@ -1996,6 +2048,7 @@ function toggleUser(id){
   if(!requirePriv('utilisateurs:edit')) return;
   const u = userById(id);
   if(!u) return;
+  if(!peutGererCompte(u)) return toast('Compte protégé : seul un administrateur peut le modifier', true);
   const moi = currentUser();
   if(moi && u.id === moi.id) return toast('Vous ne pouvez pas désactiver votre propre compte', true);
   if(u.actif && u.role === 'admin' && adminActifs().length === 1)
@@ -2010,12 +2063,17 @@ function delUser(id){
   if(!requirePriv('utilisateurs:edit')) return;
   const u = userById(id);
   if(!u) return;
+  if(!peutGererCompte(u)) return toast('Compte protégé : seul un administrateur peut le supprimer', true);
   const moi = currentUser();
   if(moi && u.id === moi.id) return toast('Vous ne pouvez pas supprimer votre propre compte', true);
   if(u.role === 'admin' && u.actif && adminActifs().length === 1)
     return toast('Impossible : c\'est le seul compte administrateur actif', true);
   if(!confirm('Supprimer le compte de ' + u.nom + ' ?')) return;
-  supprimerUtilisateur(id);
+  try{
+    supprimerUtilisateur(id);
+  }catch(err){
+    return toast(err.message, true);
+  }
   if(usrSelection === id) resetUserForm();
   else renderUtilisateurs();
   toast('Compte supprimé ✓');
@@ -2025,6 +2083,7 @@ function resetMdpUser(id){
   if(!requirePriv('utilisateurs:edit')) return;
   const u = userById(id);
   if(!u) return;
+  if(!peutGererCompte(u)) return toast('Compte protégé : seul un administrateur peut le modifier', true);
   const mdp = prompt('Nouveau mot de passe pour ' + u.nom + ' (4 caractères minimum) :');
   if(mdp === null) return;
   if(mdp.length < 4) return toast('Mot de passe : 4 caractères minimum', true);
