@@ -143,6 +143,21 @@ async function refuse(code, attendu, label){
   ok(run("userByLogin('evil') === null"), 'cloud : aucun compte admin accepté à la réception');
   ok(run("!!userByLogin('admin')"), 'compte admin local intact');
 
+  console.log('\n— En-têtes envoyés à chaque requête (régression) —');
+  run('setSyncMeta({})');
+  const vus = [];
+  ctx.fetch = async (url, opts) => {
+    vus.push({ url, opts });
+    return { ok: true, headers: { get: () => 'application/json' }, json: async () => [], text: async () => '' };
+  };
+  await run('syncTest()');
+  await run('syncPull()');
+  await run('syncPush()');
+  ok(vus.length === 3, 'trois requêtes émises (test, pull, push)');
+  ok(vus.every(v => v.opts && v.opts.headers && v.opts.headers.apikey === 'cle-anon'), 'chaque requête porte la clé apikey (GET compris)');
+  ok(vus.every(v => v.opts.headers.Authorization === 'Bearer cle-anon'), 'chaque requête porte le jeton bearer');
+  ok(vus[2].opts.headers.Prefer !== undefined, 'le push conserve son en-tête Prefer');
+
   console.log('\n— Le conducteur récupéré peut se connecter —');
   run('logout()');
   ctx.fetch = async () => { throw new Error('hors ligne'); };

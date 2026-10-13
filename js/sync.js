@@ -38,7 +38,11 @@ function sbHeaders(extra){
 async function sbFetch(path, opts){
   const c = syncConf();
   if(!syncReady()) throw new Error('Connexion Supabase non configurée (Paramètres).');
-  const res = await fetch(c.url + path, opts);
+  // la clé apikey part avec TOUTES les requêtes (GET compris), les en-têtes
+  // supplémentaires de l'appelant sont fusionnés par-dessus
+  const o = Object.assign({}, opts || {});
+  o.headers = sbHeaders(o.headers || {});
+  const res = await fetch(c.url + path, o);
   if(!res.ok){
     let msg = '';
     try{ msg = (await res.text()).slice(0, 300); }catch(e){}
