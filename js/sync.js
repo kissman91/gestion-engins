@@ -10,7 +10,9 @@ const SYNC_META_KEY = 'gestion_engins_sync_meta_v1';
 
 function syncConf(){
   return {
-    url: (DB.settings.sbUrl || '').trim().replace(/\/+$/, ''),
+    url: (DB.settings.sbUrl || '').trim()
+      .replace(/\/+$/, '')              // slashes de fin
+      .replace(/\/rest\/v1$/i, ''),     // accepte aussi l'URL « …/rest/v1 » collée telle quelle
     key: (DB.settings.sbKey || '').trim()
   };
 }
@@ -48,6 +50,9 @@ async function sbFetch(path, opts){
     try{ msg = (await res.text()).slice(0, 300); }catch(e){}
     if(res.status === 401){
       msg += ' → clé refusée : collez la clé « publishable » (ou anon) du bon projet, sans espace ni retour à la ligne, et vérifiez qu’elle n’a pas été regénérée depuis.';
+    }
+    if(res.status === 404 && msg.indexOf('PGRST125') >= 0){
+      msg += ' → l’URL doit être celle du projet (https://xxxx.supabase.co) ; l’application ajoute elle-même « /rest/v1 ». Vérifiez aussi d’avoir bien exécuté supabase.sql dans ce projet.';
     }
     throw new Error('Erreur Supabase ' + res.status + (msg ? ' : ' + msg : ''));
   }

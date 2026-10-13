@@ -189,6 +189,14 @@ async function refuse(code, attendu, label){
   await refuse('supprimerUtilisateur(' + JSON.stringify(idPaul) + ')', 'propre', 'suppression de son propre compte impossible');
   ok(run('utilisateurs().length') === 6, 'comptes restants : admin + 3 saisie + 2 lecture (dont 1 désactivée)');
 
+  console.log('\n— Normalisation de l’URL du projet —');
+  run("DB.settings.sbUrl = 'https://demo.supabase.co/rest/v1/'; saveDB();");
+  ok(run('syncConf().url') === 'https://demo.supabase.co', 'URL « …/rest/v1/ » ramenée à la racine du projet');
+  run("DB.settings.sbUrl = 'https://demo.supabase.co'; saveDB();");
+  ok(run('syncConf().url') === 'https://demo.supabase.co', 'URL simple inchangée');
+  run("DB.settings.sbUrl = 'https://demo.supabase.co/rest/v1'; saveDB();");
+  ok(run('syncConf().url') === 'https://demo.supabase.co', 'URL « …/rest/v1 » sans slash final ramenée à la racine');
+
   console.log(echecs === 0 ? '\n✅ Tous les tests passent\n' : '\n❌ ' + echecs + ' échec(s)\n');
   process.exit(echecs === 0 ? 0 : 1);
 })().catch(e => { console.error('❌ Erreur de test :', e); process.exit(1); });
