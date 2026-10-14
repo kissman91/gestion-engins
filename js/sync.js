@@ -61,16 +61,17 @@ async function sbFetch(path, opts){
 }
 
 /* ---------- Push : envoyer les lignes modifiées ---------- */
-async function syncPush(){
+async function syncPush(force = false){
   const meta = syncMeta();
-  const since = meta.pushedAt || '1970-01-01T00:00:00Z';
+  const since = force ? '1970-01-01T00:00:00Z' : (meta.pushedAt || '1970-01-01T00:00:00Z');
   const rows = [];
   SYNC_COLLECTIONS.forEach(coll => {
     (DB[coll] || []).forEach(r => {
       // le compte administrateur reste local à cet appareil : jamais envoyé au cloud
       if(coll === 'utilisateurs' && r.role === 'admin') return;
-      const at = r._at || '1970-01-01T00:00:00.000Z';
-      if(at > since){
+      const at = r._at || new Date().toISOString();
+      if(!r._at) r._at = at;
+      if(force || at > since || !meta.pushedAt){
         rows.push({ collection: coll, id: r.id, payload: r, updated_at: at });
       }
     });
@@ -96,13 +97,12 @@ async function syncPush(){
   return { sent: rows.length };
 }
 
-/* ---------- Pull : récupérer les lignes plus récentes ---------- */
+/* ---------- Pull : récupérer l'état complet du cloud ---------- */
 async function syncPull(){
   const meta = syncMeta();
-  const since = meta.pulledAt || '1970-01-01T00:00:00.000Z';
+  // Récupère l'ensemble des données ordonnées pour éviter toute perte liée au décalage d'horloge
   const rows = await sbFetch(
-    '/rest/v1/data?select=collection,id,payload,updated_at&updated_at=gt.' +
-    encodeURIComponent(since) + '&order=updated_at.asc&limit=5000'
+    '/rest/v1/data?select=collection,id,payload,updated_at&order=updated_at.asc&limit=5000'
   );
 
   let added = 0, updated = 0;
@@ -139,8 +139,8 @@ async function syncPull(){
 }
 
 /* ---------- Push + pull ---------- */
-async function syncAll(){
-  const pushed = await syncPush();
+async function syncAll(force = false){
+  const pushed = await syncPush(force);
   const pulled = await syncPull();
   return { pushed, pulled };
 }

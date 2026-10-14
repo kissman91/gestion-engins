@@ -186,6 +186,10 @@ function openAuth(mode){
   $('#faErr').classList.add('hidden');
   $('#cbErr').classList.add('hidden');
   $('#pinErr').classList.add('hidden');
+  if(mode === 'first'){
+    if($('#cbUrl') && !$('#cbUrl').value) $('#cbUrl').value = DB.settings.sbUrl || '';
+    if($('#cbKey') && !$('#cbKey').value) $('#cbKey').value = DB.settings.sbKey || '';
+  }
   setTimeout(() => {
     const f = mode === 'admin' ? $('#faNom') : mode === 'pin' ? $('#adminPinInput') : mode === 'first' ? $('#cbUrl') : $('#lgLogin');
     if(f) f.focus();

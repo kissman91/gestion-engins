@@ -20,8 +20,8 @@ function defaultState(){
       objectifMensuel: 0,
       salaireOperation: 500,       // rémunération par opération conducteur
       factureCounter: 0,
-      sbUrl: '',                   // Supabase (restent locaux, jamais synchronisés)
-      sbKey: '',
+      sbUrl: 'https://vfziobbleugwmldohogl.supabase.co',
+      sbKey: 'sb_publishable_Ty2XmyqUWTUEvTBe0a40cQ_QAbvyYiW',
       sbAuto: true
     },
     activites: [
@@ -52,7 +52,11 @@ function loadDB(){
     if(raw){
       const parsed = JSON.parse(raw);
       const def = defaultState();
-      return Object.assign(def, parsed, { settings: Object.assign(def.settings, parsed.settings||{}) });
+      const s = Object.assign(def.settings, (parsed && parsed.settings) ? parsed.settings : {});
+      if(!s.sbUrl) s.sbUrl = def.settings.sbUrl;
+      if(!s.sbKey) s.sbKey = def.settings.sbKey;
+      s.sbAuto = true;
+      return Object.assign(def, parsed, { settings: s });
     }
   }catch(e){ console.warn('Chargement impossible', e); }
   return defaultState();
