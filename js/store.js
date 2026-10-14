@@ -732,6 +732,7 @@ function currentUser(){
 function userPrivs(u){
   if(!u) return [];
   if(u.role === 'admin') return allPrivs();
+  if(u.role && u.role !== 'perso' && ROLES[u.role]) return ROLES[u.role].privs();
   return Array.isArray(u.privileges) ? u.privileges : [];
 }
 function can(cle){
