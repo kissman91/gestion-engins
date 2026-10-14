@@ -218,7 +218,8 @@ function afterLogin(){
   // tire les nouveaux comptes et données dès la connexion (échec silencieux hors ligne)
   if(syncReady()){
     syncPull().then(r => {
-      if(r.added || r.updated){ renderAll(); toast('☁️ Données et comptes à jour'); }
+      renderAll(); // toujours re-rendre pour afficher les données cloud fraîches
+      if(r.added || r.updated) toast('☁️ Données et comptes à jour');
     }).catch(() => {});
   }
   maybeGreetDemo();
@@ -1896,8 +1897,10 @@ async function doSilentSync(showFeedback = false){
     const r = await syncAll();
     const nbRecus = (r.pulled.added || 0) + (r.pulled.updated || 0);
     const nbEnvoyes = (r.pushed.sent || 0);
+    // Re-rend systématiquement le tableau de bord pour afficher les données fraîches,
+    // même si le compteur de diff est 0 (timestamps identiques mais contenus potentiellement mis à jour)
+    renderAll();
     if(nbRecus > 0 || nbEnvoyes > 0){
-      renderAll();
       toast(`☁️ Données à jour (+${nbRecus} reçue(s), ↑${nbEnvoyes} envoyée(s))`);
     } else if(showFeedback){
       toast('☁️ Données déjà à jour');
@@ -1955,7 +1958,8 @@ function init(){
 
 /* Proposition de données de démonstration : après la première connexion */
 function maybeGreetDemo(){
-  if(DB.engins.length) return;
+  if(DB.engins.length) return;           // données réelles déjà présentes
+  if(syncReady()) return;                // Supabase configuré → données réelles attendues, pas de démo
   if(localStorage.getItem('gestion_engins_greeted')) return;
   localStorage.setItem('gestion_engins_greeted', '1');
   if(!can('parametres:edit')) return;
