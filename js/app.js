@@ -43,6 +43,14 @@ function badge(cat){
   else if(kind === 'activite') DB.activites = DB.activites.filter(x => x.id !== id);
   else if(kind === 'prevention') DB.preventions = DB.preventions.filter(x => x.id !== id);
   saveDB(); renderAll(); toast('Supprimé ✓');
+  triggerCloudPush();
+}
+
+/* Envoi cloud automatique immédiat en arrière-plan */
+function triggerCloudPush(){
+  if(syncReady()){
+    syncPush().catch(e => console.warn('Push différé:', e.message));
+  }
 }
 
 /* ---------- CSV ---------- */
@@ -321,6 +329,7 @@ function currentPeriod(){
 }
 
 function renderDashboard(){
+  if(syncReady()) doSilentSync(false);
   const range = currentPeriod();
   const k = computeKPIs(range);
 
@@ -620,6 +629,7 @@ function initTravaux(){
     }
     saveDB(); resetTravauxForm(); renderAll();
     toast(id ? 'Travail mis à jour ✓' : 'Travail enregistré ✓');
+    triggerCloudPush();
   });
   $('#trvCancel').addEventListener('click', resetTravauxForm);
   $('#trvQte').addEventListener('input', updateTrvMontant);
@@ -1141,6 +1151,7 @@ function initCharges(){
     }
     saveDB(); resetChargeForm(); renderAll();
     toast(id ? 'Charge mise à jour ✓' : 'Charge enregistrée ✓');
+    triggerCloudPush();
   });
 
   $('#chCancel').addEventListener('click', resetChargeForm);
@@ -1843,6 +1854,50 @@ function initPeriodBar(){
   const pad = x => String(x).padStart(2,'0');
   $('#periodFrom').value = `${now.getFullYear()}-${pad(now.getMonth()+1)}-01`;
   $('#periodTo').value = today();
+
+  const btnDash = $('#btnDashSync');
+  if(btnDash){
+    btnDash.addEventListener('click', () => doSilentSync(true));
+  }
+}
+
+/* ============================================================
+   SYNCHRONISATION CLOUD EN ARRIÈRE-PLAN
+   ============================================================ */
+let _syncInterval = null;
+let _isSyncing = false;
+
+async function doSilentSync(showFeedback = false){
+  if(!syncReady() || _isSyncing) return;
+  _isSyncing = true;
+  const btn = $('#btnDashSync');
+  if(btn) btn.textContent = '⏳ Synchro…';
+  try{
+    const r = await syncAll();
+    const nbRecus = (r.pulled.added || 0) + (r.pulled.updated || 0);
+    const nbEnvoyes = (r.pushed.sent || 0);
+    if(nbRecus > 0 || nbEnvoyes > 0){
+      renderAll();
+      toast(`☁️ Données à jour (+${nbRecus} reçue(s), ↑${nbEnvoyes} envoyée(s))`);
+    } else if(showFeedback){
+      toast('☁️ Données déjà à jour');
+    }
+  }catch(err){
+    if(showFeedback) toast('Échec synchro : ' + err.message, true);
+  }finally{
+    _isSyncing = false;
+    if(btn) btn.textContent = '🔄 Synchroniser';
+  }
+}
+
+function startSyncLoop(){
+  if(_syncInterval) clearInterval(_syncInterval);
+  // Vérifie toutes les 25 secondes si l'utilisateur est connecté et Supabase configuré
+  _syncInterval = setInterval(() => {
+    if(currentUser() && syncReady()){
+      doSilentSync(false);
+    }
+  }, 25000);
 }
 
 let _initFait = false;
@@ -1860,6 +1915,7 @@ function init(){
   initConducteurs();
   initParametres();
   initUtilisateurs();
+  startSyncLoop();
 
   $('#btnBackupQuick').addEventListener('click', () => {
     if(!requirePriv('global:export')) return;

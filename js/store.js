@@ -22,7 +22,7 @@ function defaultState(){
       factureCounter: 0,
       sbUrl: '',                   // Supabase (restent locaux, jamais synchronisés)
       sbKey: '',
-      sbAuto: false
+      sbAuto: true
     },
     activites: [
       { id: 'a1', libelle: 'Transfert de pétioles', unite: 'voyage', prix: 5500 },
