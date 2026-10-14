@@ -126,10 +126,10 @@
             <select id="trvEngin" required></select>
           </label>
           <label>Quantité <span class="hint" id="trvUnite">(voyages)</span>
-            <input type="number" id="trvQte" min="0" step="1" required placeholder="0">
+            <input type="number" id="trvQte" min="0" step="any" required placeholder="0">
           </label>
           <label>Prix unitaire
-            <input type="number" id="trvPrix" min="0" step="1" required>
+            <input type="number" id="trvPrix" min="0" step="any" required>
           </label>
           <label>Montant total
             <input type="text" id="trvMontant" class="calc" readonly>
@@ -203,10 +203,10 @@
             <input type="number" id="chLitres" min="0" step="0.01" placeholder="0">
           </label>
           <label class="cat-carburant">Prix du litre
-            <input type="number" id="chPrixLitre" min="0" step="1" placeholder="0">
+            <input type="number" id="chPrixLitre" min="0" step="any" placeholder="0">
           </label>
           <label class="cat-carburant">Compteur (km)
-            <input type="number" id="chKm" min="0" step="1" placeholder="0">
+            <input type="number" id="chKm" min="0" step="any" placeholder="0">
           </label>
 
           <label class="cat-maintenance">Type d'intervention
@@ -224,7 +224,7 @@
           </label>
 
           <label>Montant
-            <input type="number" id="chMontant" min="0" step="1" required placeholder="0">
+            <input type="number" id="chMontant" min="0" step="any" required placeholder="0">
           </label>
         </div>
         <label class="full">Notes
@@ -489,11 +489,14 @@
           <label>Date
             <input type="date" id="trDate" required>
           </label>
+          <label>Prix unitaire
+            <input type="number" id="trPrix" min="0" step="any" placeholder="Prix unitaire">
+          </label>
         </div>
         <div class="terrain-count">
           <button type="button" class="tc-btn" id="trMinus">−</button>
           <div class="tc-value">
-            <input type="number" id="trQte" min="0" step="1" value="1" inputmode="numeric">
+            <input type="number" id="trQte" min="0" step="any" value="1" inputmode="decimal">
             <span class="tc-unit" id="trUnite">voyages</span>
           </div>
           <button type="button" class="tc-btn" id="trPlus">+</button>
@@ -682,16 +685,16 @@
             <input type="text" id="setDevise" placeholder="FCFA">
           </label>
           <label>Prix du transfert (par voyage)
-            <input type="number" id="setPrixTransfert" min="0" step="50">
+            <input type="number" id="setPrixTransfert" min="0" step="any">
           </label>
           <label>Prix du débardage (par ouverture)
-            <input type="number" id="setPrixDebardage" min="0" step="50">
+            <input type="number" id="setPrixDebardage" min="0" step="any">
           </label>
           <label>Objectif mensuel de CA
-            <input type="number" id="setObjectif" min="0" step="1000" placeholder="0 = aucun">
+            <input type="number" id="setObjectif" min="0" step="any" placeholder="0 = aucun">
           </label>
           <label>Rémunération par opération <span class="hint">(transfert ou ouverture)</span>
-            <input type="number" id="setSalaireOp" min="0" step="50" placeholder="500">
+            <input type="number" id="setSalaireOp" min="0" step="any" placeholder="500">
           </label>
         </div>
         <div class="form-actions">
@@ -712,7 +715,7 @@
             <input type="text" id="actUnite" required placeholder="Ex. voyage, ouverture, heure, m³">
           </label>
           <label>Prix par défaut
-            <input type="number" id="actPrix" min="0" step="1" required>
+            <input type="number" id="actPrix" min="0" step="any" required>
           </label>
         </div>
         <div class="form-actions">

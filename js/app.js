@@ -665,6 +665,8 @@ function renderTerrain(){
       </button>`).join('');
     $$('#trActBtns .terrain-act').forEach(b => b.addEventListener('click', () => {
       terrainActId = b.dataset.id;
+      const trP = $('#trPrix');
+      if(trP) trP.dataset.touched = '';
       renderTerrain();
     }));
   }
@@ -682,6 +684,10 @@ function renderTerrain(){
 
   const act = activiteById(terrainActId);
   $('#trUnite').textContent = act ? act.unite : '';
+  const trP = $('#trPrix');
+  if(trP && !trP.dataset.touched && act){
+    trP.value = act.prix !== undefined && act.prix !== null ? act.prix : 0;
+  }
 
   // chips de quantité rapide selon l'unité
   const chips = act && /ouverture/i.test(act.unite) ? [1,2,5,10] : [1,5,10,20];
@@ -704,7 +710,9 @@ function renderTerrain(){
 function updateTerrainMontant(){
   const act = activiteById(terrainActId);
   const q = Number($('#trQte').value)||0;
-  $('#trMontant').textContent = act ? money(q * (Number(act.prix)||0)) : '—';
+  const trP = $('#trPrix');
+  const p = (trP && trP.value !== '') ? Number(trP.value) : (act ? (Number(act.prix)||0) : 0);
+  $('#trMontant').textContent = money(q * p);
 }
 
 function renderTerrainJour(){
@@ -724,18 +732,28 @@ function renderTerrainJour(){
 }
 
 function initTerrain(){
+  const trP = $('#trPrix');
+  if(trP){
+    trP.addEventListener('input', () => {
+      trP.dataset.touched = '1';
+      updateTerrainMontant();
+    });
+  }
+
   $('#formTerrain').addEventListener('submit', e => {
     e.preventDefault();
     if(!requirePriv('terrain:edit')) return;
     const act = activiteById(terrainActId);
     const q = Number($('#trQte').value)||0;
+    const trPrixElem = $('#trPrix');
+    const prixChoisi = (trPrixElem && trPrixElem.value !== '') ? Number(trPrixElem.value) : (act ? Number(act.prix)||0 : 0);
     const data = {
       id: uid(),
       date: $('#trDate').value || today(),
       activiteId: terrainActId,
       enginId: $('#trEngin').value,
       qte: q,
-      prixUnitaire: act ? Number(act.prix)||0 : 0,
+      prixUnitaire: prixChoisi,
       conducteur: $('#trConducteur').value,
       client: $('#trClient').value.trim(),
       notes: 'saisie rapide'
@@ -745,12 +763,10 @@ function initTerrain(){
     DB.travaux.push(data);
     saveDB();
     $('#trQte').value = 1;
+    if(trPrixElem) trPrixElem.dataset.touched = '';
     renderTerrain(); renderMini();
     toast('Saisie enregistrée ✓');
-    if(DB.settings.sbAuto && syncReady()){
-      syncAll().then(r => toast(`Synchronisé ☁️ (+${r.pushed.sent} / +${r.pulled.added} ↑${r.pulled.updated})`))
-        .catch(err => toast('Synchro échouée : ' + err.message, true));
-    }
+    triggerCloudPush();
   });
   $('#trMinus').addEventListener('click', () => {
     $('#trQte').value = Math.max(0, (Number($('#trQte').value)||0) - 1);

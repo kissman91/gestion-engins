@@ -105,8 +105,9 @@ function today(){ return toISO(new Date()); }
 function monthKey(iso){ return (iso||'').slice(0,7); }
 function fmtNum(n, dec){
   if(n === null || n === undefined || isNaN(n)) return '—';
-  const d = dec === undefined ? 0 : dec;
-  return Number(n).toLocaleString('fr-FR', { minimumFractionDigits:d, maximumFractionDigits:d });
+  const num = Number(n);
+  const d = dec !== undefined ? dec : (num % 1 !== 0 ? 2 : 0);
+  return num.toLocaleString('fr-FR', { minimumFractionDigits: dec !== undefined ? d : 0, maximumFractionDigits: d });
 }
 function money(n, devise){
   if(n === null || n === undefined || isNaN(n)) return '—';
