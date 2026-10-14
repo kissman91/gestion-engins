@@ -625,7 +625,7 @@ function renderTerrain(){
     optionHTML(DB.engins, 'id', 'nom', $('#trEngin').value);
   const condSel = $('#trConducteur');
   condSel.innerHTML = '<option value="">—</option>' +
-    optionHTML(DB.employes.filter(e => e.role === 'conducteur'), 'id', 'nom', condSel.value);
+    optionHTML(DB.employes, 'id', 'nom', condSel.value);
   const moiU = currentUser();
   if(moiU && moiU.employeId && !condSel.value && employeById(moiU.employeId)) condSel.value = moiU.employeId;
   $('#trClients').innerHTML = Array.from(new Set(DB.travaux.map(t => (t.client||'').trim()).filter(Boolean)))

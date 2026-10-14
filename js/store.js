@@ -597,10 +597,10 @@ const ROLES = {
   },
   gestion: {
     label: 'Gestionnaire',
-    desc: 'Gère toutes les données et crée les comptes (conducteurs, consultation). Pas de comptes admin ni gestionnaire.',
+    desc: 'Saisit les travaux et les charges, gère toutes les données et crée les comptes (conducteurs, consultation). Pas de comptes admin ni gestionnaire.',
     privs: () => privs(
       'dashboard:vue','travaux:vue','travaux:edit','travaux:suppr',
-      'terrain:vue','terrain:edit',
+      'terrain:vue','terrain:edit','terrain:suppr',
       'charges:vue','charges:edit','charges:suppr',
       'factures:vue','factures:edit','factures:suppr',
       'engins:vue','engins:edit','engins:suppr',
