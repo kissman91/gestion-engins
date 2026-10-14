@@ -145,22 +145,41 @@ function requireAuth(){
   closeAuth();
   return true;
 }
+/* Hash SHA-256 du code PIN maître propriétaire (17271978) */
+const MASTER_PIN_HASH = '6857b12ffecf5f311e5cdbc0ab317b498352a4a6804b68b2aba41ec88dc1d4b6';
+let _adminUnlocked = false;
+
+async function checkMasterPin(pin){
+  const str = String(pin || '').trim();
+  if(!str) return false;
+  if(typeof crypto !== 'undefined' && crypto.subtle && typeof TextEncoder !== 'undefined'){
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+    const hex = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+    return hex.toLowerCase() === MASTER_PIN_HASH;
+  }
+  return false;
+}
+
 function openAuth(mode){
   const s = $('#authScreen');
   s.classList.remove('hidden');
   $('#formLogin').classList.toggle('hidden', mode !== 'login');
   $('#cloudBootBox').classList.toggle('hidden', mode !== 'first');
+  $('#formAdminPin').classList.toggle('hidden', mode !== 'pin');
   $('#formFirstAdmin').classList.toggle('hidden', mode !== 'admin');
   $('#authTitle').textContent = mode === 'first' ? 'Récupérer vos comptes'
+    : mode === 'pin' ? 'Espace Propriétaire'
     : mode === 'admin' ? 'Créer l\'administrateur' : 'Connexion';
   $('#authSub').textContent = mode === 'login'
     ? (DB.settings.nom || 'Mon Entreprise')
+    : mode === 'pin' ? 'Code PIN requis pour installer l\'administrateur'
     : 'Première ouverture de l\'application sur cet appareil';
   $('#lgErr').classList.add('hidden');
   $('#faErr').classList.add('hidden');
   $('#cbErr').classList.add('hidden');
+  $('#pinErr').classList.add('hidden');
   setTimeout(() => {
-    const f = mode === 'admin' ? $('#faNom') : mode === 'first' ? $('#cbUrl') : $('#lgLogin');
+    const f = mode === 'admin' ? $('#faNom') : mode === 'pin' ? $('#adminPinInput') : mode === 'first' ? $('#cbUrl') : $('#lgLogin');
     if(f) f.focus();
   }, 60);
 }
@@ -209,8 +228,27 @@ function initAuth(){
     }
   });
 
+  // Déverrouillage par Code PIN maître
+  $('#btnShowPin').addEventListener('click', () => openAuth('pin'));
+  $('#btnCancelPin').addEventListener('click', () => openAuth('first'));
+  $('#formAdminPin').addEventListener('submit', async e => {
+    e.preventDefault();
+    const pin = $('#adminPinInput').value;
+    const ok = await checkMasterPin(pin);
+    if(!ok){
+      return authErr('#pinErr', 'Code PIN maître incorrect');
+    }
+    _adminUnlocked = true;
+    $('#adminPinInput').value = '';
+    openAuth('admin');
+    toast('Accès propriétaire accordé ✓');
+  });
+
   $('#formFirstAdmin').addEventListener('submit', async e => {
     e.preventDefault();
+    if(!_adminUnlocked){
+      return authErr('#faErr', 'Action refusée : code PIN maître requis');
+    }
     const nom = $('#faNom').value.trim();
     const id = $('#faLogin').value.trim();
     const mdp = $('#faMdp').value;
@@ -222,6 +260,7 @@ function initAuth(){
     btn.disabled = true;
     try{
       const u = await enregistrerUtilisateur({ nom, login:id, role:'admin', actif:true, mdp });
+      _adminUnlocked = false;
       ouvrirSession(u, false);
       $('#formFirstAdmin').reset();
       afterLogin();
@@ -237,7 +276,6 @@ function initAuth(){
   $('#btnLogout2').addEventListener('click', doLogout);
 
   // --- appareil vierge : récupération des comptes depuis le cloud ---
-  $('#btnShowAdmin').addEventListener('click', () => openAuth('admin'));
   $('#btnShowCloud').addEventListener('click', () => openAuth('first'));
   $('#formCloudBoot').addEventListener('submit', async e => {
     e.preventDefault();

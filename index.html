@@ -826,8 +826,18 @@
         <div class="auth-err hidden" id="cbErr"></div>
         <div class="muted" id="cbStatus"></div>
       </form>
-      <button type="button" class="btn btn-ghost auth-alt" id="btnShowAdmin">🛡 Première installation sans cloud — créer un administrateur</button>
+      <button type="button" class="btn btn-ghost auth-alt" id="btnShowPin" style="font-size:12px;opacity:.7">🔐 Espace Propriétaire (Code PIN)</button>
     </div>
+
+    <form id="formAdminPin" class="auth-col hidden">
+      <p class="muted">Accès réservé au patron : saisissez votre code PIN maître pour déverrouiller la création du compte administrateur sur cet appareil.</p>
+      <label>Code PIN Maître
+        <input type="password" id="adminPinInput" required placeholder="Code PIN maître" autocomplete="off" inputmode="numeric">
+      </label>
+      <button type="submit" class="btn btn-primary auth-btn">🔓 Déverrouiller l'accès</button>
+      <div class="auth-err hidden" id="pinErr"></div>
+      <button type="button" class="btn btn-ghost auth-alt" id="btnCancelPin">⬅ Retour</button>
+    </form>
 
     <form id="formFirstAdmin" class="auth-col hidden">
       <p class="muted">Première installation : créez le compte administrateur qui créera les autres comptes et définira leurs privilèges. Configurez ensuite Supabase dans Paramètres pour partager les comptes et les données.</p>
