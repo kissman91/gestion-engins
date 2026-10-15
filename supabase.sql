@@ -45,3 +45,20 @@ begin
       to anon, authenticated using (true);
   end if;
 end $$;
+
+-- ============================================================
+-- REALTIME : nécessaire pour le WebSocket temps réel
+-- Expose toutes les colonnes lors des changements (INSERT/UPDATE/DELETE)
+-- et inscrit la table dans la publication Supabase Realtime.
+-- ============================================================
+alter table public.data replica identity full;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and tablename = 'data'
+  ) then
+    alter publication supabase_realtime add table public.data;
+  end if;
+end $$;

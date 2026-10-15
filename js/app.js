@@ -202,6 +202,7 @@ function authErr(sel, msg){
   el.classList.remove('hidden');
 }
 function doLogout(){
+  stopRealtimeSync();   // coupe le WebSocket proprement
   logout();
   renderMini();
   openAuth('login');
@@ -215,10 +216,11 @@ function afterLogin(){
   renderMini();
   const u = currentUser();
   toast('Bonjour ' + (u ? u.nom.split(' ')[0] : '') + ' 👋');
-  // tire les nouveaux comptes et données dès la connexion (échec silencieux hors ligne)
+  // Démarre le WebSocket Realtime (puis tire les données initiales)
   if(syncReady()){
+    startRealtimeSync();                    // WebSocket immédiat
     syncPull().then(r => {
-      renderAll(); // toujours re-rendre pour afficher les données cloud fraîches
+      renderAll();
       if(r.added || r.updated) toast('☁️ Données et comptes à jour');
     }).catch(() => {});
   }
@@ -1634,7 +1636,11 @@ function renderSbStatus(){
   if(!syncReady()){ el.textContent = 'Non connecté'; return; }
   const m = syncMeta();
   const fmt = iso => iso ? new Date(iso).toLocaleString('fr-FR') : '—';
-  el.textContent = 'Connecté · dernier envoi : ' + fmt(m.lastPush) + ' · dernier retrait : ' + fmt(m.lastPull);
+  const rtLabel = isRealtimeActive()
+    ? '🟢 Temps réel WebSocket actif'
+    : (realtimeStatus() === 'connecting' ? '🟡 WebSocket en cours de connexion…'
+      : '🔴 Temps réel inactif (polling)');
+  el.innerHTML = `Connecté · ${rtLabel}<br><small>Dernier envoi : ${fmt(m.lastPush)} · Dernier retrait : ${fmt(m.lastPull)}</small>`;
 }
 
 function renderParametres(){
@@ -1761,6 +1767,9 @@ function initParametres(){
     DB.settings.sbKey = $('#sbKey').value.trim();
     DB.settings.sbAuto = $('#sbAuto').checked;
     saveDB(); renderSbStatus();
+    // Redémarre le WebSocket avec la nouvelle configuration
+    stopRealtimeSync();
+    if(syncReady() && currentUser()) startRealtimeSync();
     toast('Connexion enregistrée ✓');
   });
   $('#sbAuto').addEventListener('change', () => {
@@ -1879,6 +1888,11 @@ function initPeriodBar(){
   const btnDash = $('#btnDashSync');
   if(btnDash){
     btnDash.addEventListener('click', () => doSilentSync(true));
+    // Met à jour le libellé du bouton selon l'état Realtime
+    setInterval(() => {
+      if(!btnDash || btnDash.textContent.startsWith('⏳')) return;
+      btnDash.textContent = isRealtimeActive() ? '🟢 Temps réel actif' : '🔄 Synchroniser';
+    }, 3000);
   }
 }
 
@@ -1915,12 +1929,26 @@ async function doSilentSync(showFeedback = false){
 
 function startSyncLoop(){
   if(_syncInterval) clearInterval(_syncInterval);
-  // Vérifie toutes les 25 secondes si l'utilisateur est connecté et Supabase configuré
+
+  // Lance le WebSocket Realtime en priorité (propagation instantanée)
+  if(syncReady() && currentUser()) startRealtimeSync();
+
+  // Fallback polling :
+  //   - Si Realtime actif : toutes les 5 min (rattrapage si un événement WS est manqué)
+  //   - Si Realtime inactif (pas de CDN ou config absente) : toutes les 25s comme avant
+  const POLL_RT  = 5 * 60 * 1000;   // 5 minutes
+  const POLL_STD = 25 * 1000;        // 25 secondes
+
   _syncInterval = setInterval(() => {
-    if(currentUser() && syncReady()){
-      doSilentSync(false);
-    }
-  }, 25000);
+    if(!currentUser() || !syncReady()) return;
+    const interval = isRealtimeActive() ? POLL_RT : POLL_STD;
+    // On utilise le timestamp du dernier passage pour respecter l'intervalle voulu
+    const meta = syncMeta();
+    const since = meta._lastPoll || 0;
+    if(Date.now() - since < interval) return;
+    setSyncMeta(Object.assign(syncMeta(), { _lastPoll: Date.now() }));
+    doSilentSync(false);
+  }, 5000);   // vérifie toutes les 5s si c'est le bon moment de déclencher
 }
 
 let _initFait = false;

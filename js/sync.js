@@ -1,8 +1,9 @@
-/* ============ sync.js — Synchronisation Supabase (PostgREST) ============
+/* ============ sync.js — Synchronisation Supabase (PostgREST + Realtime) ============
    Modèle : une table `data` (collection, id, payload jsonb, updated_at).
    Push : envoie les lignes modifiées (_at > dernier push connu).
    Pull : récupère les lignes plus récentes que notre dernier pull.
    Résolution de conflit : dernier écrivain gagne (updated_at).
+   Realtime : WebSocket Supabase JS v2 pour propagation instantanée entre appareils.
    Les identifiants Supabase (sbUrl/sbKey) restent locaux, jamais poussés.
 */
 
@@ -40,8 +41,6 @@ function sbHeaders(extra){
 async function sbFetch(path, opts){
   const c = syncConf();
   if(!syncReady()) throw new Error('Connexion Supabase non configurée (Paramètres).');
-  // la clé apikey part avec TOUTES les requêtes (GET compris), les en-têtes
-  // supplémentaires de l'appelant sont fusionnés par-dessus
   const o = Object.assign({}, opts || {});
   o.headers = sbHeaders(o.headers || {});
   const res = await fetch(c.url + path, o);
@@ -49,10 +48,10 @@ async function sbFetch(path, opts){
     let msg = '';
     try{ msg = (await res.text()).slice(0, 300); }catch(e){}
     if(res.status === 401){
-      msg += ' → clé refusée : collez la clé « publishable » (ou anon) du bon projet, sans espace ni retour à la ligne, et vérifiez qu’elle n’a pas été regénérée depuis.';
+      msg += ' → clé refusée : collez la clé « publishable » (ou anon) du bon projet, sans espace ni retour à la ligne, et vérifiez qu\'elle n\'a pas été regénérée depuis.';
     }
     if(res.status === 404 && msg.indexOf('PGRST125') >= 0){
-      msg += ' → l’URL doit être celle du projet (https://xxxx.supabase.co) ; l’application ajoute elle-même « /rest/v1 ». Vérifiez aussi d’avoir bien exécuté supabase.sql dans ce projet.';
+      msg += ' → l\'URL doit être celle du projet (https://xxxx.supabase.co) ; l\'application ajoute elle-même « /rest/v1 ». Vérifiez aussi d\'avoir bien exécuté supabase.sql dans ce projet.';
     }
     throw new Error('Erreur Supabase ' + res.status + (msg ? ' : ' + msg : ''));
   }
@@ -100,7 +99,6 @@ async function syncPush(force = false){
 /* ---------- Pull : récupérer l'état complet du cloud ---------- */
 async function syncPull(){
   const meta = syncMeta();
-  // Récupère l'ensemble des données ordonnées pour éviter toute perte liée au décalage d'horloge
   const rows = await sbFetch(
     '/rest/v1/data?select=collection,id,payload,updated_at&order=updated_at.asc&limit=5000'
   );
@@ -123,9 +121,6 @@ async function syncPull(){
   });
 
   if(added || updated){
-    // figer l'état tiré AVANT saveDB : sinon stampChanges marquerait toutes
-    // les lignes reçues comme modifiées localement et le prochain push
-    // les renverrait en écrasant les éditions concurrentes d'un autre appareil.
     _snap = snapshotRows();
     saveDB();
   }
@@ -149,4 +144,127 @@ async function syncAll(force = false){
 async function syncTest(){
   await sbFetch('/rest/v1/data?select=id&limit=1');
   return true;
+}
+
+/* ============================================================
+   REALTIME — WebSocket Supabase JS v2
+   Propagation instantanée : dès qu'un autre appareil écrit,
+   on reçoit l'événement et on tire les nouvelles données.
+   ============================================================ */
+
+let _sbClient      = null;   // instance supabase.createClient()
+let _rtChannel     = null;   // canal d'écoute postgres_changes
+let _rtConfKey     = '';     // url+key utilisés lors de la dernière init (pour détecter un changement)
+let _rtStatus      = 'off';  // 'off' | 'connecting' | 'connected' | 'error'
+let _rtRetryTimer  = null;   // timer de reconnexion automatique
+
+/* Clé qui identifie la configuration Supabase courante */
+function _confKey(){
+  const c = syncConf();
+  return c.url + '|' + c.key;
+}
+
+/* Crée (ou réutilise) le client Supabase JS */
+function _ensureClient(){
+  if(!syncReady()) return null;
+  const ck = _confKey();
+  if(_sbClient && _rtConfKey === ck) return _sbClient;
+  // config changée → on recrée
+  _destroyRealtime();
+  if(typeof supabase === 'undefined'){
+    console.warn('[Realtime] Supabase JS non disponible (CDN non chargé ?)');
+    return null;
+  }
+  const c = syncConf();
+  _sbClient   = supabase.createClient(c.url, c.key, {
+    realtime : { params: { eventsPerSecond: 10 } },
+    auth     : { persistSession: false }
+  });
+  _rtConfKey  = ck;
+  return _sbClient;
+}
+
+/* Lance l'abonnement Realtime aux changements de la table `data` */
+function startRealtimeSync(){
+  if(!syncReady()) return false;
+  const client = _ensureClient();
+  if(!client) return false;
+  if(_rtChannel) return true;    // déjà abonné
+
+  _rtStatus  = 'connecting';
+  _rtChannel = client
+    .channel('gestion-engins-data')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'data' },
+      _onRealtimeEvent
+    )
+    .subscribe(_onRealtimeStatus);
+
+  return true;
+}
+
+/* Arrête et libère le canal Realtime */
+function stopRealtimeSync(){
+  _destroyRealtime();
+}
+
+/* Indique si le WebSocket est actuellement connecté */
+function isRealtimeActive(){
+  return _rtStatus === 'connected';
+}
+
+/* Retourne le statut lisible ('off' | 'connecting' | 'connected' | 'error') */
+function realtimeStatus(){
+  return _rtStatus;
+}
+
+/* ---- Callbacks internes ---- */
+
+function _onRealtimeEvent(payload){
+  // Un autre appareil vient d'écrire → on tire les données fraîches
+  if(typeof currentUser === 'function' && !currentUser()) return;
+  syncPull()
+    .then(() => { if(typeof renderAll === 'function') renderAll(); })
+    .catch(err => console.warn('[Realtime] Pull après événement échoué :', err.message));
+}
+
+function _onRealtimeStatus(status, err){
+  const prev = _rtStatus;
+  if(status === 'SUBSCRIBED'){
+    _rtStatus = 'connected';
+    if(_rtRetryTimer){ clearTimeout(_rtRetryTimer); _rtRetryTimer = null; }
+    if(prev !== 'connected') console.info('[Realtime] WebSocket connecté ✓');
+  } else if(status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED'){
+    _rtStatus = 'error';
+    console.warn('[Realtime] Statut :', status, err || '');
+    // Reconnexion automatique dans 15s
+    if(!_rtRetryTimer){
+      _rtRetryTimer = setTimeout(() => {
+        _rtRetryTimer = null;
+        if(syncReady()){
+          _destroyChannel();   // ne détruit pas le client, juste le canal
+          startRealtimeSync();
+        }
+      }, 15000);
+    }
+  }
+}
+
+function _destroyChannel(){
+  if(_rtChannel && _sbClient){
+    try{ _sbClient.removeChannel(_rtChannel); }catch(e){}
+    _rtChannel = null;
+  }
+  _rtStatus = 'off';
+}
+
+function _destroyRealtime(){
+  if(_rtRetryTimer){ clearTimeout(_rtRetryTimer); _rtRetryTimer = null; }
+  _destroyChannel();
+  if(_sbClient){
+    try{ _sbClient.realtime.disconnect(); }catch(e){}
+    _sbClient  = null;
+    _rtConfKey = '';
+  }
 }
