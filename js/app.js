@@ -497,8 +497,8 @@ function unitePlural(qte, unite){
   return unite;
 }
 function pctOf(v, total){
-  if(!total) return '0 %';
-  return fmtNum((v/total)*100,1) + ' %';
+  if(!total || !isFinite(total) || !isFinite(v)) return '0 %';
+  return fmtNum((Number(v)/Number(total))*100,1) + ' %';
 }
 function frDate(iso){
   if(!iso) return '—';
@@ -511,7 +511,9 @@ function monthLabel(m){
   return mois[Number(mm)-1] + ' ' + y.slice(2);
 }
 function lastMonths(range, n){
-  const end = new Date(range[1] + 'T00:00:00');
+  let endStr = range && range[1] ? range[1] : today();
+  if(endStr > today()) endStr = today();
+  const end = new Date(endStr + 'T00:00:00');
   const out = [];
   for(let i = n - 1; i >= 0; i--){
     const d = new Date(end.getFullYear(), end.getMonth() - i, 1);
@@ -1121,7 +1123,7 @@ function initCharges(){
   const autoMontant = () => {
     if($('#chId').value) return;
     const l = Number($('#chLitres').value), p = Number($('#chPrixLitre').value);
-    if($('#chCategorie').value === 'carburant' && l > 0 && p > 0) $('#chMontant').value = Math.round(l * p);
+    if($('#chCategorie').value === 'carburant' && l > 0 && p > 0) $('#chMontant').value = Math.round(l * p * 100) / 100;
   };
   $('#chLitres').addEventListener('input', autoMontant);
   $('#chPrixLitre').addEventListener('input', autoMontant);
@@ -1148,7 +1150,7 @@ function initCharges(){
       data.km = $('#chKm').value !== '' ? Number($('#chKm').value) : null;
       if(!data.enginId){ toast('Le carburant doit être rattaché à un engin', true); return; }
       if(!data.litres){ toast('Indiquez les litres', true); return; }
-      if(!data.montant) data.montant = Math.round(data.litres * data.prixLitre);
+      if(!data.montant) data.montant = Math.round(data.litres * data.prixLitre * 100) / 100;
     }else if(cat === 'maintenance'){
       const p = DB.preventions.find(x => x.id === $('#chTypeMaint').value);
       data.typeMaint = p ? p.libelle : ($('#chLibelle').value.trim() || 'Intervention');
@@ -1255,7 +1257,7 @@ function openEngin(id){
         <div class="mini-kpi"><div class="m-l">Réf. engin</div><div class="m-v">${consoRef?fmtNum(consoRef,1)+' L':'—'}</div></div>
         <div class="mini-kpi"><div class="m-l">Écart conso.</div><div class="m-v ${ecart===null?'':(ecart<=0?'pos':'neg')}">${ecart===null?'—':(ecart>0?'+':'')+fmtNum(ecart,1)+' %'}</div></div>
         <div class="mini-kpi"><div class="m-l">Coût carburant/100km</div><div class="m-v">${(k.parCat.carburant&&k.km)?money(k.parCat.carburant/k.km*100):'—'}</div></div>
-        <div class="mini-kpi"><div class="m-l">CA par ouverture</div><div class="m-v">${k.ouvertures?money(k.parActivite['Débardage']?k.parActivite['Débardage'].ca/k.ouvertures:0):'—'}</div></div>
+        <div class="mini-kpi"><div class="m-l">CA par ouverture</div><div class="m-v">${k.ouvertures?money(k.caOuvertures/k.ouvertures):'—'}</div></div>
       </div>
 
       <div class="grid-2" style="margin-top:16px">

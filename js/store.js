@@ -102,8 +102,11 @@ function uid(){ return 'id-' + Math.random().toString(36).slice(2,9) + '-' + Dat
 /* ---------- Utilitaires ---------- */
 function toISO(d){
   if(typeof d === 'string') return d.slice(0,10);
-  const z = new Date(d.getTime() - d.getTimezoneOffset()*60000);
-  return z.toISOString().slice(0,10);
+  if(!(d instanceof Date) || isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 function today(){ return toISO(new Date()); }
 function monthKey(iso){ return (iso||'').slice(0,7); }
@@ -130,8 +133,13 @@ function activiteById(id){ return DB.activites.find(a => a.id === id) || null; }
 
 /* Montant d'un travail */
 function trvMontant(t){
-  if(t.montant !== undefined && t.montant !== null && !isNaN(t.montant)) return Number(t.montant);
-  return (Number(t.qte)||0) * (Number(t.prixUnitaire)||0);
+  if(!t) return 0;
+  if(t.montant !== undefined && t.montant !== null && t.montant !== '' && !isNaN(t.montant) && Number(t.montant) > 0){
+    return Number(t.montant);
+  }
+  const q = Number(t.qte) || 0;
+  const p = Number(t.prixUnitaire) || 0;
+  return Math.round(q * p * 100) / 100;
 }
 
 /* ---------- Dates de période ---------- */
@@ -177,9 +185,9 @@ function filterCharges(range, enginId){
 /* km parcourus sur une période = dernier compteur connu avant/après la période */
 function readingsFor(enginId){
   return DB.charges
-    .filter(c => c.enginId === enginId && c.km !== undefined && c.km !== null && c.km !== '')
+    .filter(c => c.enginId === enginId && c.km !== undefined && c.km !== null && c.km !== '' && !isNaN(c.km))
     .map(c => ({ date: c.date, km: Number(c.km) }))
-    .sort((a,b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+    .sort((a,b) => a.date !== b.date ? (a.date < b.date ? -1 : 1) : a.km - b.km);
 }
 
 function kmParcours(range, enginId){
@@ -217,12 +225,12 @@ function kmTotalDepuis(enginId){
   const e = enginById(enginId);
   if(!e) return 0;
   const kms = DB.charges
-    .filter(c => c.enginId === enginId && c.km !== undefined && c.km !== null && c.km !== '')
+    .filter(c => c.enginId === enginId && c.km !== undefined && c.km !== null && c.km !== '' && !isNaN(c.km))
     .map(c => Number(c.km));
   if(!kms.length) return 0;
-  const depart = Number(e.kmDepart)||0;
-  const max = Math.max(...kms), min = Math.min(...kms);
-  return Math.max(0, max - Math.max(depart, min));
+  const depart = Number(e.kmDepart) > 0 ? Number(e.kmDepart) : Math.min(...kms);
+  const max = Math.max(...kms);
+  return Math.max(0, max - depart);
 }
 
 /* ---------- Indicateurs principaux ---------- */
@@ -247,22 +255,30 @@ function computeKPIs(range, enginId){
 
   // Par activité
   const parActivite = {};
-  let voyages = 0, ouvertures = 0;
+  let voyages = 0, ouvertures = 0, caVoyages = 0, caOuvertures = 0;
   trav.forEach(t => {
     const a = activiteById(t.activiteId);
     const key = a ? a.libelle : 'Autre';
     const lib = key.toLowerCase();
+    const target = (lib + ' ' + (a && a.unite ? a.unite : '')).toLowerCase();
+    const m = trvMontant(t);
+    const q = Number(t.qte) || 0;
     if(!parActivite[key]) parActivite[key] = { qte:0, ca:0, unite: a ? a.unite : '' };
-    parActivite[key].qte += Number(t.qte)||0;
-    parActivite[key].ca += trvMontant(t);
-    if(lib.includes('transfert') || lib.includes('voyage')) voyages += Number(t.qte)||0;
-    else if(lib.includes('débardage') || lib.includes('debardage') || lib.includes('ouverture')) ouvertures += Number(t.qte)||0;
+    parActivite[key].qte += q;
+    parActivite[key].ca += m;
+    if(target.includes('transfert') || target.includes('voyage')){
+      voyages += q;
+      caVoyages += m;
+    } else if(target.includes('débardage') || target.includes('debardage') || target.includes('ouverture')){
+      ouvertures += q;
+      caOuvertures += m;
+    }
   });
 
   return {
     ca, depenses, benefice, marge, parCat, litres, km, conso100, coutKm,
     nbTravaux: trav.length, nbCharges: char.length,
-    voyages, ouvertures,
+    voyages, ouvertures, caVoyages, caOuvertures,
     parActivite
   };
 }
@@ -282,17 +298,22 @@ function echeancesMaint(){
       let nextDate = null, nextKm = null, etat = 'ok', jours = null, kmRestant = null;
 
       if(p.mois){
-        if(last){
-          const d = new Date(last.date);
+        const refDate = last ? last.date : (e.dateService || null);
+        if(refDate){
+          const d = new Date(refDate + 'T00:00:00');
           d.setMonth(d.getMonth() + Number(p.mois));
           nextDate = toISO(d);
-          jours = Math.round((new Date(nextDate) - new Date()) / 86400000);
+          const nowMidnight = new Date();
+          nowMidnight.setHours(0,0,0,0);
+          jours = Math.round((new Date(nextDate + 'T00:00:00') - nowMidnight) / 86400000);
         }else{
           nextDate = null; jours = null;
         }
       }
       if(p.km){
-        const refKm = last && last.km ? Number(last.km) : Number(e.kmDepart)||0;
+        const refKm = last && last.km !== null && last.km !== undefined && !isNaN(last.km)
+          ? Number(last.km)
+          : (Number(e.kmDepart)||0);
         nextKm = refKm + Number(p.km);
         kmRestant = nextKm - kmActuel;
       }
@@ -317,7 +338,7 @@ function echeancesMaint(){
 
 function currentKm(e){
   const kms = DB.charges
-    .filter(c => c.enginId === e.id && c.km !== undefined && c.km !== null && c.km !== '')
+    .filter(c => c.enginId === e.id && c.km !== undefined && c.km !== null && c.km !== '' && !isNaN(c.km))
     .map(c => Number(c.km));
   if(!kms.length) return Number(e.kmDepart)||0;
   return Math.max(...kms, Number(e.kmDepart)||0);
@@ -440,18 +461,20 @@ function computeConducteurs(range, enginId){
     siens.forEach(t => {
       const a = activiteById(t.activiteId);
       const lib = (a ? a.libelle : '').toLowerCase();
+      const target = (lib + ' ' + (a && a.unite ? a.unite : '')).toLowerCase();
       const q = Number(t.qte) || 0;
-      if(lib.includes('transfert') || lib.includes('voyage')) transferts += q;
-      else if(lib.includes('débardage') || lib.includes('debardage') || lib.includes('ouverture')) ouvertures += q;
+      if(target.includes('transfert') || target.includes('voyage')) transferts += q;
+      else if(target.includes('débardage') || target.includes('debardage') || target.includes('ouverture')) ouvertures += q;
       else autre += q;
       ca += trvMontant(t);
       nb++;
     });
-    const salaire = (transferts + ouvertures) * taux;
+    const salaire = Math.round((transferts + ouvertures) * taux * 100) / 100;
+    ca = Math.round(ca * 100) / 100;
     return {
       id, nom: emp ? emp.nom : (nom || '—'), role: emp ? emp.role : 'autre',
       nb, transferts, ouvertures, autre, ca, salaire, taux,
-      reste: ca - salaire
+      reste: Math.round((ca - salaire) * 100) / 100
     };
   }).filter(r => r.nb > 0)
     .sort((a,b) => b.ca - a.ca);
@@ -487,12 +510,13 @@ function _sousMille(n){
 function nbEnLettres(n){
   n = Math.floor(Math.abs(n));
   if(n === 0) return 'zéro';
-  if(n > 999999999) return String(n);
-  const millions = Math.floor(n/1000000);
+  const milliards = Math.floor(n/1000000000);
+  const millions = Math.floor((n%1000000000)/1000000);
   const milliers = Math.floor((n%1000000)/1000);
   const reste = n%1000;
   let s = '';
-  if(millions) s += (millions === 1 ? 'un million' : _sousMille(millions) + ' millions');
+  if(milliards) s += (milliards === 1 ? 'un milliard' : _sousMille(milliards) + ' milliards');
+  if(millions) s += (s ? ' ' : '') + (millions === 1 ? 'un million' : _sousMille(millions) + ' millions');
   if(milliers) s += (s ? ' ' : '') + (milliers === 1 ? 'mille' : _sousMille(milliers) + ' mille');
   if(reste) s += (s ? ' ' : '') + _sousMille(reste);
   return s;
@@ -541,7 +565,7 @@ function factureLignes(client, du, au){
     g.dates.push(t.date);
   });
   groups.forEach(g => {
-    g.montant = g.qte * g.prix;
+    g.montant = Math.round((g.qte * g.prix) * 100) / 100;
     g.du = g.dates[0]; g.au = g.dates[g.dates.length-1];
     delete g.dates;
   });
@@ -549,9 +573,11 @@ function factureLignes(client, du, au){
 }
 
 function factureTotals(lignes, tvaPct){
-  const ht = lignes.reduce((s,l) => s + l.montant, 0);
-  const tva = ht * (Number(tvaPct)||0) / 100;
-  return { ht, tva, ttc: ht + tva };
+  const ht = Math.round((lignes||[]).reduce((s,l) => s + (Number(l.montant)||0), 0) * 100) / 100;
+  const pct = Number(tvaPct)||0;
+  const tva = Math.round((ht * pct / 100) * 100) / 100;
+  const ttc = Math.round((ht + tva) * 100) / 100;
+  return { ht, tva, ttc };
 }
 
 /* ============================================================
