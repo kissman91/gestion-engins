@@ -224,7 +224,6 @@ function afterLogin(){
       if(r.added || r.updated) toast('☁️ Données et comptes à jour');
     }).catch(() => {});
   }
-  maybeGreetDemo();
 }
 
 function initAuth(){
@@ -1840,11 +1839,6 @@ function initParametres(){
     reader.readAsText(f);
     e.target.value = '';
   });
-  $('#btnDemo').addEventListener('click', () => {
-    if(!requirePriv('parametres:edit')) return;
-    if(!confirm('Charger des données de démonstration ? (remplace les données actuelles)')) return;
-    seedDemo(); renderAll(); toast('Données de démonstration chargées ✓');
-  });
   $('#btnReset').addEventListener('click', () => {
     if(!requirePriv('parametres:edit')) return;
     if(!confirm('Tout effacer définitivement ? (les comptes utilisateurs sont conservés)')) return;
@@ -1984,19 +1978,6 @@ function init(){
 
   route();
   renderMini();
-}
-
-/* Proposition de données de démonstration : après la première connexion */
-function maybeGreetDemo(){
-  if(DB.engins.length) return;           // données réelles déjà présentes
-  if(syncReady()) return;                // Supabase configuré → données réelles attendues, pas de démo
-  if(localStorage.getItem('gestion_engins_greeted')) return;
-  localStorage.setItem('gestion_engins_greeted', '1');
-  if(!can('parametres:edit')) return;
-  if(confirm('Bienvenue ! Charger des données de démonstration pour découvrir l\'application ?\n(OK = démo, Annuler = commencer à vide)')){
-    seedDemo();
-    route(); renderMini();
-  }
 }
 
 document.addEventListener('DOMContentLoaded', init);

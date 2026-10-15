@@ -68,6 +68,9 @@ async function syncPush(force = false){
     (DB[coll] || []).forEach(r => {
       // le compte administrateur reste local à cet appareil : jamais envoyé au cloud
       if(coll === 'utilisateurs' && r.role === 'admin') return;
+      // Mode production : ne jamais envoyer de données de test/démo vers le cloud
+      if(coll === 'travaux' && (r.client === 'SCIEFA' || r.client === 'Zone Nord')) return;
+      if(coll === 'charges' && (String(r.id||'').includes('-mv4wi58') || r.prestataire === 'Garage central')) return;
       const at = r._at || new Date().toISOString();
       if(!r._at) r._at = at;
       if(force || at > since || !meta.pushedAt){
@@ -104,12 +107,36 @@ async function syncPull(){
   );
 
   let added = 0, updated = 0;
+
+  // 1. Purge locale des données mock ou supprimées du cloud
+  SYNC_COLLECTIONS.forEach(coll => {
+    if(coll === 'utilisateurs') return; // comptes admin locaux
+    const cloudIds = new Set((rows || []).filter(r => r.collection === coll && r.payload && r.payload.id).map(r => r.payload.id));
+    if(Array.isArray(DB[coll])){
+      const beforeLen = DB[coll].length;
+      DB[coll] = DB[coll].filter(item => {
+        // Toujours retirer les données de démo
+        if(coll === 'travaux' && (item.client === 'SCIEFA' || item.client === 'Zone Nord')) return false;
+        if(coll === 'charges' && (String(item.id||'').includes('-mv4wi58') || item.prestataire === 'Garage central')) return false;
+        // Si le cloud a des éléments pour cette collection, retirer les lignes locales synchronisées qui ont disparu du cloud
+        if(cloudIds.size > 0 && item._at && !cloudIds.has(item.id)) return false;
+        return true;
+      });
+      if(DB[coll].length !== beforeLen) updated++;
+    }
+  });
+
+  // 2. Intégration des éléments du cloud
   (rows || []).forEach(row => {
     if(!SYNC_COLLECTIONS.includes(row.collection)) return;
     const p = row.payload;
     if(!p || !p.id) return;
     // on n'accepte jamais de compte administrateur depuis le cloud
     if(row.collection === 'utilisateurs' && p.role === 'admin') return;
+    // on rejette toute donnée de test mock résiduelle
+    if(row.collection === 'travaux' && (p.client === 'SCIEFA' || p.client === 'Zone Nord')) return;
+    if(row.collection === 'charges' && (String(p.id||'').includes('-mv4wi58') || p.prestataire === 'Garage central')) return;
+
     const arr = DB[row.collection];
     if(!Array.isArray(arr)) return;
     const i = arr.findIndex(x => x.id === p.id);

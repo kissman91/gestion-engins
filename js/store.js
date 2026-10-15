@@ -44,6 +44,17 @@ function defaultState(){
 /* Collections synchronisées avec le cloud (identifiants exclus) */
 const SYNC_COLLECTIONS = ['engins','employes','activites','travaux','charges','preventions','factures','utilisateurs'];
 
+/* Nettoyage des données de test/démo (mode production) */
+function purgeMockData(db){
+  if(!db) return;
+  if(Array.isArray(db.travaux)){
+    db.travaux = db.travaux.filter(t => t && t.client !== 'SCIEFA' && t.client !== 'Zone Nord');
+  }
+  if(Array.isArray(db.charges)){
+    db.charges = db.charges.filter(c => c && !String(c.id||'').includes('-mv4wi58') && c.prestataire !== 'Garage central' && !(c.libelle||'').includes('Moussa D.'));
+  }
+}
+
 let DB = loadDB();
 
 function loadDB(){
@@ -56,7 +67,9 @@ function loadDB(){
       if(!s.sbUrl) s.sbUrl = def.settings.sbUrl;
       if(!s.sbKey) s.sbKey = def.settings.sbKey;
       s.sbAuto = true;
-      return Object.assign(def, parsed, { settings: s });
+      const loaded = Object.assign(def, parsed, { settings: s });
+      purgeMockData(loaded);
+      return loaded;
     }
   }catch(e){ console.warn('Chargement impossible', e); }
   return defaultState();
@@ -359,86 +372,9 @@ function importJSON(text){
   saveDB();
 }
 
-/* ---------- Données de démonstration ---------- */
+/* ---------- Données de démonstration (désactivées en production) ---------- */
 function seedDemo(){
-  const def = defaultState();
-  def.engins = [
-    { id:'e1', nom:'Pelle hydraulique PC-200', immat:'AB-123-CD', type:'Pelle', conducteur:'emp1', kmDepart:45000, consoRef:32, dateService:'2023-02-10', prixAchat:28000000 },
-    { id:'e2', nom:'Chargeuse frontal L-90', immat:'EF-456-GH', type:'Chargeuse', conducteur:'emp2', kmDepart:12000, consoRef:25, dateService:'2024-01-15', prixAchat:19500000 },
-    { id:'e3', nom:'Camion benne 10T', immat:'IJ-789-KL', type:'Camion', conducteur:'emp3', kmDepart:88000, consoRef:38, dateService:'2022-06-01', prixAchat:15000000 }
-  ];
-  def.employes = [
-    { id:'emp1', nom:'Moussa D.', role:'conducteur' },
-    { id:'emp2', nom:'Ibrahim K.', role:'conducteur' },
-    { id:'emp3', nom:'Sory B.', role:'conducteur' },
-    { id:'emp4', nom:'Amadou S.', role:'apprenti' },
-    { id:'emp5', nom:'Karim T.', role:'apprenti' }
-  ];
-  def.settings.nom = 'ETS Débardage & Transferts';
-  def.settings.objectifMensuel = 2000000;
-
-  const now = new Date();
-  const pad = x => String(x).padStart(2,'0');
-  let k1 = 45000, k2 = 12000, k3 = 88000;
-
-  for(let back = 5; back >= 0; back--){
-    const d = new Date(now.getFullYear(), now.getMonth() - back, 1);
-    const y = d.getFullYear(), m = d.getMonth();
-    const daysInMonth = new Date(y, m+1, 0).getDate();
-    const maxDay = back === 0 ? Math.min(now.getDate(), daysInMonth) : daysInMonth;
-
-    for(let day = 1; day <= maxDay; day += 1){
-      const date = `${y}-${pad(m+1)}-${pad(day)}`;
-      const engin = def.engins[Math.floor(Math.random()*def.engins.length)];
-      if(Math.random() < 0.9){
-        const q = 5 + Math.floor(Math.random()*14);
-        def.travaux.push({ id:uid(), date, activiteId:'a1', enginId:engin.id, qte:q, prixUnitaire:5500,
-          conducteur: engin.conducteur, client:'SCIEFA' });
-      }
-      if(Math.random() < 0.75){
-        const q = 2 + Math.floor(Math.random()*7);
-        def.travaux.push({ id:uid(), date, activiteId:'a2', enginId:engin.id, qte:q, prixUnitaire:4450,
-          conducteur: engin.conducteur, client:'Zone Nord' });
-      }
-    }
-
-    // Carburant chaque semaine
-    for(let day = 4; day <= maxDay; day += 7){
-      const date = `${y}-${pad(m+1)}-${pad(day)}`;
-      const litres = 120 + Math.floor(Math.random()*160);
-      const prixL = 750;
-      const eIdx = (day/7 | 0) % 3;
-      const e = def.engins[eIdx];
-      if(eIdx===0){ k1 += 800 + Math.floor(Math.random()*400); def.charges.push({ id:uid(), date, categorie:'carburant', enginId:e.id, litres, prixLitre:prixL, montant:litres*prixL, km:k1 }); }
-      else if(eIdx===1){ k2 += 400 + Math.floor(Math.random()*300); def.charges.push({ id:uid(), date, categorie:'carburant', enginId:e.id, litres, prixLitre:prixL, montant:litres*prixL, km:k2 }); }
-      else { k3 += 1200 + Math.floor(Math.random()*600); def.charges.push({ id:uid(), date, categorie:'carburant', enginId:e.id, litres, prixLitre:prixL, montant:litres*prixL, km:k3 }); }
-    }
-
-    // Maintenance 1x / mois
-    {
-      const date = `${y}-${pad(m+1)}-${pad(Math.min(15, maxDay))}`;
-      const types = ['Vidange moteur','Révision générale','Réparation'];
-      const t = types[m % types.length];
-      def.charges.push({ id:uid(), date, categorie:'maintenance', enginId:def.engins[m%3].id,
-        typeMaint:t === 'Révision générale' ? 'Révision générale' : 'Vidange moteur',
-        libelle:t, prestataire:'Garage central', montant: 45000 + Math.floor(Math.random()*8)*10000,
-        km: [k1,k2,k3][m%3] });
-    }
-
-    // Salaires fin de mois
-    {
-      const date = `${y}-${pad(m+1)}-${pad(maxDay)}`;
-      def.employes.forEach(emp => {
-        const montant = emp.role === 'conducteur' ? 185000 : 75000;
-        def.charges.push({ id:uid(), date, categorie:'salaire', employeId:emp.id,
-          mois:`${y}-${pad(m+1)}`, montant, libelle:`Salaire ${emp.nom}` });
-      });
-    }
-  }
-
-  def.utilisateurs = DB.utilisateurs || [];   // les comptes ne sont pas remplacés par la démo
-  DB = def;
-  saveDB();
+  console.warn('Mode production actif : la génération de données de démonstration est désactivée.');
 }
 
 /* ============================================================
