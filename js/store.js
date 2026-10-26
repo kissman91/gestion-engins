@@ -37,12 +37,19 @@ function defaultState(){
     preventions: [
       { id: 'p1', libelle: 'Vidange moteur', km: 5000, mois: 6 },
       { id: 'p2', libelle: 'Révision générale', km: 10000, mois: 12 }
-    ]
+    ],
+    __deleted: []   // tombstones : { collection, id } — suppressions à propager au cloud (jamais synchronisés comme données)
   };
 }
 
 /* Collections synchronisées avec le cloud (identifiants exclus) */
 const SYNC_COLLECTIONS = ['engins','employes','activites','travaux','charges','preventions','factures','utilisateurs'];
+
+/* Collections de référence : partagées entre tous les comptes (jamais filtrées par propriétaire) */
+const REF_COLLECTIONS = ['engins','employes','activites','preventions','utilisateurs'];
+
+/* Collections de saisie : appartiennent à l'utilisateur qui les a créées (champ _uid) */
+const ENTRY_COLLECTIONS = ['travaux','charges','factures'];
 
 /* Nettoyage des données de test/démo (mode production) */
 function purgeMockData(db){
@@ -111,6 +118,16 @@ function saveDB(){
 }
 
 function uid(){ return 'id-' + Math.random().toString(36).slice(2,9) + '-' + Date.now().toString(36); }
+
+/* Marque une suppression locale pour qu'elle soit propagée au cloud (tombstone).
+   Idempotent : n'ajoute jamais deux fois la même suppression.
+   `uid` = propriétaire de la ligne supprimée (permet à son compte de voir la suppression). */
+function markDeleted(collection, id, uid){
+  DB.__deleted = DB.__deleted || [];
+  if(!DB.__deleted.some(d => d.collection === collection && d.id === id)){
+    DB.__deleted.push({ collection, id, _uid: uid });
+  }
+}
 
 /* ---------- Utilitaires ---------- */
 function toISO(d){
@@ -186,18 +203,18 @@ function inRange(iso, range){
 }
 
 function filterTravaux(range, enginId){
-  return DB.travaux.filter(t =>
+  return rowsPour('travaux').filter(t =>
     inRange(t.date, range) && (!enginId || t.enginId === enginId));
 }
 function filterCharges(range, enginId){
-  return DB.charges.filter(c =>
+  return rowsPour('charges').filter(c =>
     inRange(c.date, range) && (!enginId || c.enginId === enginId));
 }
 
 /* ---------- Consommation : km & litres ---------- */
 /* km parcourus sur une période = dernier compteur connu avant/après la période */
 function readingsFor(enginId){
-  return DB.charges
+  return rowsPour('charges')
     .filter(c => c.enginId === enginId && c.km !== undefined && c.km !== null && c.km !== '' && !isNaN(c.km))
     .map(c => ({ date: c.date, km: Number(c.km) }))
     .sort((a,b) => a.date !== b.date ? (a.date < b.date ? -1 : 1) : a.km - b.km);
@@ -237,7 +254,7 @@ function kmParcours(range, enginId){
 function kmTotalDepuis(enginId){
   const e = enginById(enginId);
   if(!e) return 0;
-  const kms = DB.charges
+  const kms = rowsPour('charges')
     .filter(c => c.enginId === enginId && c.km !== undefined && c.km !== null && c.km !== '' && !isNaN(c.km))
     .map(c => Number(c.km));
   if(!kms.length) return 0;
@@ -303,7 +320,7 @@ function echeancesMaint(){
     DB.preventions.forEach(p => {
       if(!p.km && !p.mois) return;
       // dernière intervention du même type (libellé proche)
-      const intervs = DB.charges
+      const intervs = rowsPour('charges')
         .filter(c => c.categorie === 'maintenance' && c.enginId === e.id && c.typeMaint === p.libelle)
         .sort((a,b) => (a.date < b.date ? 1 : -1));
       const last = intervs[0] || null;
@@ -350,7 +367,7 @@ function echeancesMaint(){
 }
 
 function currentKm(e){
-  const kms = DB.charges
+  const kms = rowsPour('charges')
     .filter(c => c.enginId === e.id && c.km !== undefined && c.km !== null && c.km !== '' && !isNaN(c.km))
     .map(c => Number(c.km));
   if(!kms.length) return Number(e.kmDepart)||0;
@@ -479,7 +496,7 @@ function nextFactureNumero(){
 
 /* Lignes de facture = travaux du client sur la période, regroupés par activité+engin+PU */
 function factureLignes(client, du, au){
-  const trav = DB.travaux
+  const trav = rowsPour('travaux')
     .filter(t => (t.client || '').trim().toLowerCase() === (client || '').trim().toLowerCase())
     .filter(t => inRange(t.date, [du, au]))
     .sort((a,b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
@@ -578,7 +595,8 @@ const ROLES = {
   },
   saisie: {
     label: 'Conducteur (saisie terrain)',
-    desc: 'Saisit les travaux depuis le chantier, corrige ses saisies. Ni finances, ni paramètres.',
+    desc: 'Saisit les travaux depuis le chantier, corrige ses saisies. Ni finances, ni paramètres. Ne voit que ses propres saisies.',
+    restrictedData: true,
     privs: () => privs(
       'travaux:vue','travaux:edit','travaux:suppr',
       'terrain:vue','terrain:edit','terrain:suppr',
@@ -708,6 +726,36 @@ function can(cle){
   return userPrivs(u).includes(cle);
 }
 function canMod(mod, action){ return can(mod + ':' + action); }
+
+/* ---------- Visibilité des données par propriétaire ---------- */
+
+/* Comptes dont les saisies sont restreintes : ils ne voient que leurs propres lignes (_uid).
+   Les autres (admin, gestionnaire, consultation) consolident toutes les saisies. */
+function estRestreintDonnees(u){
+  u = u || currentUser();
+  return !!(u && ROLES[u.role] && ROLES[u.role].restrictedData);
+}
+
+/* Un utilisateur restreint peut-il voir / modifier / supprimer cette ligne ? */
+function estProprietaire(coll, row){
+  const u = currentUser();
+  if(!u) return true;
+  if(!estRestreintDonnees(u)) return true;
+  if(REF_COLLECTIONS.includes(coll)) return true;   // données de référence partagées
+  return !!(row && row._uid && row._uid === u.id);
+}
+
+/* Lecture d'une collection scellée à l'utilisateur connecté :
+   - admin / gestionnaire / consultation : toutes les lignes ;
+   - conducteur (saisie) : uniquement ses lignes (champ _uid) sur les collections de saisie ;
+   - collections de référence : toujours complètes. */
+function rowsPour(coll){
+  const rows = DB[coll] || [];
+  const u = currentUser();
+  if(!u || !estRestreintDonnees(u)) return rows;
+  if(REF_COLLECTIONS.includes(coll)) return rows;
+  return rows.filter(r => r && r._uid === u.id);
+}
 function privsAccordables(){          // on n'accorde que ce qu'on possède soi-même
   const u = currentUser();
   if(!u) return [];

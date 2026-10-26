@@ -14,6 +14,9 @@ create table if not exists public.data (
 
 create index if not exists data_updated_at_idx on public.data (updated_at);
 
+-- Index pour les pulls « mes saisies » des comptes conducteur (payload->>'_uid')
+create index if not exists data_uid_idx on public.data ((payload->>'_uid'));
+
 alter table public.data enable row level security;
 
 -- Accès avec la clé anon (application monoposte / équipe privée).

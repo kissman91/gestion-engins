@@ -30,18 +30,25 @@ const DEL_PRIV = {
 function badge(cat){
   const c = CATEGORIES[cat] || CATEGORIES.autre;
   return `<span class="badge ${c.badge}">${c.label}</span>`;
-}function del(id, kind){
-  const labels = { travaux:'ce travail', charges:'cette charge', engin:'cet engin (et ses données ?)', 
+}
+/* Correspondance kind (appelé par l'UI) → collection (clé de DB) */
+const KIND_TO_COLL = {
+  travaux:'travaux', terrain:'travaux', charges:'charges',
+  engin:'engins', employe:'employes', activite:'activites',
+  prevention:'preventions', facture:'factures'
+};
+function del(id, kind){
+  const labels = { travaux:'ce travail', charges:'cette charge', engin:'cet engin (et ses données ?)',
                    employe:'cet employé', activite:'cette activité', prevention:'cet intervalle' };
+  const coll = KIND_TO_COLL[kind] || kind;
+  if(!Array.isArray(DB[coll])) return;
   const mod = DEL_PRIV[kind] || kind;
   if(!requirePriv(mod + ':suppr')) return;
+  const cible = DB[coll].find(x => x.id === id);
+  if(!estProprietaire(coll, cible)){ toast('Vous ne pouvez supprimer que vos propres saisies', true); return; }
   if(!confirm('Supprimer ' + (labels[kind]||'cet élément') + ' ?')) return;
-  if(kind === 'travaux') DB.travaux = DB.travaux.filter(x => x.id !== id);
-  else if(kind === 'charges') DB.charges = DB.charges.filter(x => x.id !== id);
-  else if(kind === 'engin') DB.engins = DB.engins.filter(x => x.id !== id);
-  else if(kind === 'employe') DB.employes = DB.employes.filter(x => x.id !== id);
-  else if(kind === 'activite') DB.activites = DB.activites.filter(x => x.id !== id);
-  else if(kind === 'prevention') DB.preventions = DB.preventions.filter(x => x.id !== id);
+  DB[coll] = DB[coll].filter(x => x.id !== id);
+  markDeleted(coll, id, (cible||{})._uid);
   saveDB(); renderAll(); toast('Supprimé ✓');
   triggerCloudPush();
 }
@@ -465,8 +472,8 @@ function renderDashboard(){
 
   // --- activité récente ---
   const recent = []
-    .concat(DB.travaux.map(t => ({ date:t.date, type:'trv', obj:t })))
-    .concat(DB.charges.map(c => ({ date:c.date, type:'ch', obj:c })))
+    .concat(rowsPour('travaux').map(t => ({ date:t.date, type:'trv', obj:t })))
+    .concat(rowsPour('charges').map(c => ({ date:c.date, type:'ch', obj:c })))
     .sort((a,b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
     .slice(0, 8);
   $('#recentList').innerHTML = recent.length ? recent.map(r => {
@@ -554,7 +561,7 @@ function renderTravaux(){
 
   const month = $('#trvFilterMonth').value;
   const engF = $('#trvFilterEngin').value;
-  let rows = DB.travaux.slice().sort((a,b) => a.date < b.date ? 1 : -1);
+  let rows = rowsPour('travaux').slice().sort((a,b) => a.date < b.date ? 1 : -1);
   if(month) rows = rows.filter(t => monthKey(t.date) === month);
   if(engF) rows = rows.filter(t => t.enginId === engF);
 
@@ -580,7 +587,7 @@ function renderTravaux(){
 }
 
 function editTravaux(id){
-  const t = DB.travaux.find(x => x.id === id);
+  const t = rowsPour('travaux').find(x => x.id === id);
   if(!t) return;
   fillTravauxSelects();
   $('#trvId').value = t.id;
@@ -633,6 +640,7 @@ function initTravaux(){
       const i = DB.travaux.findIndex(x => x.id === id);
       if(i >= 0) DB.travaux[i] = Object.assign(DB.travaux[i], data);
     }else{
+      data._uid = (currentUser()||{}).id;   // attribution à l'utilisateur qui saisit
       DB.travaux.push(data);
     }
     saveDB(); resetTravauxForm(); renderAll();
@@ -647,7 +655,7 @@ function initTravaux(){
   $('#trvFilterEngin').addEventListener('change', renderTravaux);
   $('#trvExport').addEventListener('click', () => {
     if(!requirePriv('global:export')) return;
-    const rows = DB.travaux.slice().sort((a,b) => a.date < b.date ? 1 : -1).map(t => {
+    const rows = rowsPour('travaux').slice().sort((a,b) => a.date < b.date ? 1 : -1).map(t => {
       const a = activiteById(t.activiteId);
       return [t.date, a?a.libelle:'', a?a.unite:'', t.qte, t.prixUnitaire, trvMontant(t), enginNom(t.enginId), t.conducteur||'', t.client||'', t.notes||''];
     });
@@ -686,7 +694,7 @@ function renderTerrain(){
     optionHTML(DB.employes, 'id', 'nom', condSel.value);
   const moiU = currentUser();
   if(moiU && moiU.employeId && !condSel.value && employeById(moiU.employeId)) condSel.value = moiU.employeId;
-  $('#trClients').innerHTML = Array.from(new Set(DB.travaux.map(t => (t.client||'').trim()).filter(Boolean)))
+  $('#trClients').innerHTML = Array.from(new Set(rowsPour('travaux').map(t => (t.client||'').trim()).filter(Boolean)))
     .map(c => `<option value="${escapeHTML(c)}">`).join('');
   if(!$('#trDate').value) $('#trDate').value = today();
 
@@ -725,7 +733,7 @@ function updateTerrainMontant(){
 
 function renderTerrainJour(){
   const d = $('#trDate').value || today();
-  const rows = DB.travaux.filter(t => t.date === d).sort((a,b) => (b._at||'') < (a._at||'') ? -1 : 1);
+  const rows = rowsPour('travaux').filter(t => t.date === d).sort((a,b) => (b._at||'') < (a._at||'') ? -1 : 1);
   const total = rows.reduce((s,t) => s + trvMontant(t), 0);
   $('#trJourRecap').innerHTML = `${rows.length} saisie(s) · <b class="pos">${money(total)}</b>`;
   $('#trJourList').innerHTML = rows.map(t => {
@@ -768,6 +776,7 @@ function initTerrain(){
     };
     if(!data.date || !data.enginId || !act){ toast('Choisissez engin et activité', true); return; }
     if(q <= 0){ toast('Quantité > 0', true); return; }
+    data._uid = (currentUser()||{}).id;   // attribution à l'utilisateur qui saisit
     DB.travaux.push(data);
     saveDB();
     $('#trQte').value = 1;
@@ -807,7 +816,7 @@ function initTerrain(){
 let facDraft = null;   // { numero, date, client, du, au, tva, note, lignes, totals, savedId }
 
 function renderFactures(){
-  const clients = Array.from(new Set(DB.travaux.map(t => (t.client||'').trim()).filter(Boolean))).sort();
+  const clients = Array.from(new Set(rowsPour('travaux').map(t => (t.client||'').trim()).filter(Boolean))).sort();
   $('#facClients').innerHTML = clients.map(c => `<option value="${escapeHTML(c)}">`).join('');
   if(!$('#facDate').value) $('#facDate').value = today();
   if(!$('#facDu').value){
@@ -818,7 +827,7 @@ function renderFactures(){
   }
 
   const q = ($('#facSearch').value||'').trim().toLowerCase();
-  const list = DB.factures.filter(f => !q || (f.client||'').toLowerCase().includes(q) || (f.numero||'').toLowerCase().includes(q))
+  const list = rowsPour('factures').filter(f => !q || (f.client||'').toLowerCase().includes(q) || (f.numero||'').toLowerCase().includes(q))
     .sort((a,b) => a.date < b.date ? 1 : -1);
   $('#tableFactures tbody').innerHTML = list.map(f => `<tr>
     <td><b>${escapeHTML(f.numero)}</b></td>
@@ -919,7 +928,7 @@ function renderFacturePreview(){
 }
 
 function openFacture(id){
-  const f = DB.factures.find(x => x.id === id);
+  const f = rowsPour('factures').find(x => x.id === id);
   if(!f) return;
   facDraft = Object.assign({}, f, { savedId: f.id });
   $('#facFormCard').classList.add('hidden');
@@ -929,10 +938,14 @@ function openFacture(id){
 
 function delFacture(id){
   if(!requirePriv('factures:suppr')) return;
+  const cible = DB.factures.find(x => x.id === id);
+  if(!estProprietaire('factures', cible)){ toast('Vous ne pouvez supprimer que vos propres factures', true); return; }
   if(!confirm('Supprimer cette facture ?')) return;
   DB.factures = DB.factures.filter(x => x.id !== id);
   if(facDraft && facDraft.savedId === id) facDraft = null;
+  markDeleted('factures', id, (cible||{})._uid);
   saveDB(); renderAll(); toast('Facture supprimée ✓');
+  triggerCloudPush();
 }
 
 function initFactures(){
@@ -966,6 +979,7 @@ function initFactures(){
     if(facDraft.savedId){ toast('Facture déjà enregistrée'); return; }
     const f = Object.assign({}, facDraft, { id: uid(), _at: new Date().toISOString() });
     delete f.savedId;
+    f._uid = (currentUser()||{}).id;   // attribution à l'utilisateur qui saisit
     DB.factures.push(f);
     DB.settings.factureCounter = (Number(DB.settings.factureCounter)||0) + 1;
     facDraft.savedId = f.id;
@@ -1041,7 +1055,7 @@ function renderCharges(){
   const month = $('#chFilterMonth').value;
   const catF = $('#chFilterCat').value;
   const engF = $('#chFilterEngin').value;
-  let rows = DB.charges.slice().sort((a,b) => a.date < b.date ? 1 : -1);
+  let rows = rowsPour('charges').slice().sort((a,b) => a.date < b.date ? 1 : -1);
   if(month) rows = rows.filter(c => monthKey(c.date) === month);
   if(catF) rows = rows.filter(c => c.categorie === catF);
   if(engF) rows = rows.filter(c => c.enginId === engF);
@@ -1079,7 +1093,7 @@ function chargeDetail(c){
 }
 
 function editCharge(id){
-  const c = DB.charges.find(x => x.id === id);
+  const c = rowsPour('charges').find(x => x.id === id);
   if(!c) return;
   renderCharges();
   $('#chId').value = c.id;
@@ -1132,7 +1146,7 @@ function initCharges(){
     if(!requirePriv('charges:edit')) return;
     const cat = $('#chCategorie').value;
     const id = $('#chId').value;
-    const prev = id ? (DB.charges.find(x => x.id === id) || {}) : {};
+    const prev = id ? (rowsPour('charges').find(x => x.id === id) || {}) : {};
 
     const data = Object.assign({}, prev, {
       id: id || uid(),
@@ -1171,6 +1185,7 @@ function initCharges(){
       const i = DB.charges.findIndex(x => x.id === id);
       if(i >= 0) DB.charges[i] = data;
     }else{
+      data._uid = (currentUser()||{}).id;   // attribution à l'utilisateur qui saisit
       DB.charges.push(data);
     }
     saveDB(); resetChargeForm(); renderAll();
@@ -1184,7 +1199,7 @@ function initCharges(){
   $('#chFilterEngin').addEventListener('change', renderCharges);
   $('#chExport').addEventListener('click', () => {
     if(!requirePriv('global:export')) return;
-    const rows = DB.charges.slice().sort((a,b) => a.date < b.date ? 1 : -1).map(c =>
+    const rows = rowsPour('charges').slice().sort((a,b) => a.date < b.date ? 1 : -1).map(c =>
       [c.date, CATEGORIES[c.categorie].label, chargeDetail(c).replace(/<[^>]+>/g,''), c.enginId?enginNom(c.enginId):'Global', c.montant, c.km||'', c.litres||'', c.notes||'']);
     exportCSV('charges.csv', ['Date','Catégorie','Détail','Engin','Montant','Km','Litres','Notes'], rows);
   });
@@ -1235,8 +1250,8 @@ function openEngin(id){
   if(!e) return;
   const range = ['1970-01-01','2999-12-31'];
   const k = computeKPIs(range, e.id);
-  const trav = DB.travaux.filter(t => t.enginId === e.id).sort((a,b) => a.date < b.date ? 1 : -1).slice(0,10);
-  const char = DB.charges.filter(c => c.enginId === e.id).sort((a,b) => a.date < b.date ? 1 : -1).slice(0,10);
+  const trav = rowsPour('travaux').filter(t => t.enginId === e.id).sort((a,b) => a.date < b.date ? 1 : -1).slice(0,10);
+  const char = rowsPour('charges').filter(c => c.enginId === e.id).sort((a,b) => a.date < b.date ? 1 : -1).slice(0,10);
   const consoRef = Number(e.consoRef)||null;
   const ecart = (k.conso100 !== null && consoRef) ? ((k.conso100 - consoRef) / consoRef) * 100 : null;
 
@@ -1397,7 +1412,7 @@ function renderMaintenance(){
   }).join('') || '<tr><td colspan="7" class="muted">Ajoutez des engins et des intervalles.</td></tr>';
 
   // historique
-  const hist = DB.charges.filter(c => c.categorie === 'maintenance').sort((a,b) => a.date < b.date ? 1 : -1);
+  const hist = rowsPour('charges').filter(c => c.categorie === 'maintenance').sort((a,b) => a.date < b.date ? 1 : -1);
   $('#tableHistMaint tbody').innerHTML = hist.map(c => `<tr>
     <td>${frDate(c.date)}</td>
     <td>${c.enginId ? escapeHTML(enginNom(c.enginId)) : '—'}</td>
@@ -1550,7 +1565,7 @@ function initConducteurs(){
 
 function renderRapports(){
   // --- mensuel ---
-  const all = DB.travaux.concat(DB.charges).map(x => monthKey(x.date)).filter(Boolean);
+  const all = rowsPour('travaux').concat(rowsPour('charges')).map(x => monthKey(x.date)).filter(Boolean);
   const months = all.length
     ? Array.from(new Set(all)).sort().reverse()
     : [];
@@ -1597,7 +1612,7 @@ function renderRapports(){
 
   // --- salaires ---
   $('#tableSalaires tbody').innerHTML = DB.employes.map(emp => {
-    const pays = DB.charges.filter(c => c.categorie === 'salaire' && c.employeId === emp.id);
+    const pays = rowsPour('charges').filter(c => c.categorie === 'salaire' && c.employeId === emp.id);
     const total = pays.reduce((s,c) => s + (Number(c.montant)||0), 0);
     return `<tr>
       <td>${escapeHTML(emp.nom)}</td>
@@ -1667,7 +1682,7 @@ function renderParametres(){
   </tr>`).join('');
 
   $('#tableEmployes tbody').innerHTML = DB.employes.map(emp => {
-    const total = DB.charges.filter(c => c.categorie === 'salaire' && c.employeId === emp.id)
+    const total = rowsPour('charges').filter(c => c.categorie === 'salaire' && c.employeId === emp.id)
       .reduce((s,c) => s + (Number(c.montant)||0), 0);
     return `<tr>
       <td>${escapeHTML(emp.nom)}</td>

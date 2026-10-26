@@ -44,28 +44,90 @@ async function sbFetch(path, opts){
   const o = Object.assign({}, opts || {});
   o.headers = sbHeaders(o.headers || {});
   const res = await fetch(c.url + path, o);
-  if(!res.ok){
-    let msg = '';
-    try{ msg = (await res.text()).slice(0, 300); }catch(e){}
-    if(res.status === 401){
-      msg += ' → clé refusée : collez la clé « publishable » (ou anon) du bon projet, sans espace ni retour à la ligne, et vérifiez qu\'elle n\'a pas été regénérée depuis.';
-    }
-    if(res.status === 404 && msg.indexOf('PGRST125') >= 0){
-      msg += ' → l\'URL doit être celle du projet (https://xxxx.supabase.co) ; l\'application ajoute elle-même « /rest/v1 ». Vérifiez aussi d\'avoir bien exécuté supabase.sql dans ce projet.';
-    }
-    throw new Error('Erreur Supabase ' + res.status + (msg ? ' : ' + msg : ''));
-  }
+  await _checkRes(res);
   const ct = res.headers.get('content-type') || '';
   return ct.includes('json') ? res.json() : null;
+}
+
+/* Convertit une réponse HTTP en erreur lisible (ou ne fait rien si la requête a réussi) */
+async function _checkRes(res){
+  if(res.ok) return;
+  let msg = '';
+  try{ msg = (await res.text()).slice(0, 300); }catch(e){}
+  if(res.status === 401){
+    msg += ' → clé refusée : collez la clé « publishable » (ou anon) du bon projet, sans espace ni retour à la ligne, et vérifiez qu\'elle n\'a pas été regénérée depuis.';
+  }
+  if(res.status === 404 && msg.indexOf('PGRST125') >= 0){
+    msg += ' → l\'URL doit être celle du projet (https://xxxx.supabase.co) ; l\'application ajoute elle-même « /rest/v1 ». Vérifiez aussi d\'avoir bien exécuté supabase.sql dans ce projet.';
+  }
+  throw new Error('Erreur Supabase ' + res.status + (msg ? ' : ' + msg : ''));
+}
+
+/* GET paginé intégral : récupère TOUTES les lignes (pas de troncature à 5000),
+   sinon la fusion confondrait des lignes absentes de la page avec des suppressions. */
+async function sbFetchAll(path){
+  const c = syncConf();
+  if(!syncReady()) throw new Error('Connexion Supabase non configurée (Paramètres).');
+  const PAGE = 1000;
+  let out = [];
+  let offset = 0;
+  for(;;){
+    const res = await fetch(c.url + path, {
+      method: 'GET',
+      headers: sbHeaders({ Range: offset + '-' + (offset + PAGE - 1) })
+    });
+    await _checkRes(res);
+    const ct = res.headers.get('content-type') || '';
+    if(!ct.includes('json')) break;
+    const page = await res.json();
+    out = out.concat(page);
+    const cr = res.headers.get('content-range') || '';
+    const m = cr.match(/\/(\d+)$/);
+    const total = m ? Number(m[1]) : 0;
+    const got = page.length;
+    if(got === 0 || got < PAGE || (total > 0 && offset + got >= total)) break;
+    offset += got;
+  }
+  return out;
 }
 
 /* ---------- Push : envoyer les lignes modifiées ---------- */
 async function syncPush(force = false){
   const meta = syncMeta();
+
+  /* 1. Propager les suppressions : on écrase la ligne du cloud par un tombeau
+     { deleted:true } — les autres appareils le verront au pull et supprimeront
+     leur copie locale (un vrai DELETE serait recréé par un appareil qui l'a encore). */
+  const deletes = DB.__deleted || [];
+  let deletedSent = 0;
+  const _moi = currentUser ? (currentUser()||{}).id : null;
+  const tombRows = deletes.map(d => ({
+    collection: d.collection,
+    id: d.id,
+    payload: { id: d.id, deleted: true, _uid: d._uid || _moi || undefined, _deletedAt: new Date().toISOString() },
+    updated_at: new Date().toISOString()
+  }));
+  if(tombRows.length){
+    for(let i = 0; i < tombRows.length; i += 500){
+      const batch = tombRows.slice(i, i + 500);
+      await sbFetch('/rest/v1/data?on_conflict=collection,id', {
+        method: 'POST',
+        headers: sbHeaders({ 'Prefer': 'resolution=merge-duplicates' }),
+        body: JSON.stringify(batch)
+      });
+    }
+    DB.__deleted = [];
+    deletedSent = deletes.length;
+    saveDB();
+  }
+
+  /* 2. Upsert des lignes modifiées (jamais une ligne tombstonée) */
   const since = force ? '1970-01-01T00:00:00Z' : (meta.pushedAt || '1970-01-01T00:00:00Z');
+  const tombKey = {}; deletes.forEach(d => { tombKey[d.collection + '|' + d.id] = true; });
   const rows = [];
   SYNC_COLLECTIONS.forEach(coll => {
     (DB[coll] || []).forEach(r => {
+      if(tombKey[coll + '|' + r.id]) return;   // supprimée localement : jamais renvoyée
       // le compte administrateur reste local à cet appareil : jamais envoyé au cloud
       if(coll === 'utilisateurs' && r.role === 'admin') return;
       // Mode production : ne jamais envoyer de données de test/démo vers le cloud
@@ -79,16 +141,16 @@ async function syncPush(force = false){
     });
   });
 
-  if(!rows.length) return { sent: 0 };
-
-  // upsert par lots de 500
-  for(let i = 0; i < rows.length; i += 500){
-    const batch = rows.slice(i, i + 500);
-    await sbFetch('/rest/v1/data?on_conflict=collection,id', {
-      method: 'POST',
-      headers: sbHeaders({ 'Prefer': 'resolution=merge-duplicates' }),
-      body: JSON.stringify(batch)
-    });
+  if(rows.length){
+    // upsert par lots de 500
+    for(let i = 0; i < rows.length; i += 500){
+      const batch = rows.slice(i, i + 500);
+      await sbFetch('/rest/v1/data?on_conflict=collection,id', {
+        method: 'POST',
+        headers: sbHeaders({ 'Prefer': 'resolution=merge-duplicates' }),
+        body: JSON.stringify(batch)
+      });
+    }
   }
 
   const now = new Date().toISOString();
@@ -96,58 +158,78 @@ async function syncPush(force = false){
   meta.lastPush = now;
   meta.lastPushCount = rows.length;
   setSyncMeta(meta);
-  return { sent: rows.length };
+  return { sent: rows.length, deleted: deletedSent };
 }
 
 /* ---------- Pull : récupérer l'état complet du cloud ---------- */
 async function syncPull(){
   const meta = syncMeta();
-  const rows = await sbFetch(
-    '/rest/v1/data?select=collection,id,payload,updated_at&order=updated_at.asc&limit=5000'
-  );
+  // Fetch INTÉGRAL et paginé : indispensable pour ne pas croire à tort
+  // que des lignes manquantes sont des suppressions.
+  const BASE = '/rest/v1/data?select=collection,id,payload,updated_at&order=updated_at.asc';
+  const u = currentUser ? currentUser() : null;
+  let rows;
+  if(u && estRestreintDonnees(u)){
+    // Conducteur : collections de référence complètes + uniquement SES saisies (_uid)
+    const ref = await sbFetchAll(BASE + '&collection=in.(' + REF_COLLECTIONS.join(',') + ')');
+    const mine = await sbFetchAll(BASE + '&collection=in.(' + ENTRY_COLLECTIONS.join(',') + ')&payload->>_uid=eq.' + encodeURIComponent(u.id));
+    rows = ref.concat(mine);
+  }else{
+    // Admin / gestionnaire / consultation : toutes les saisies
+    rows = await sbFetchAll(BASE);
+  }
 
-  let added = 0, updated = 0;
+  let added = 0, updated = 0, removed = 0;
+  const deletedBefore = (DB.__deleted || []).length;
+  const tombKey = {};
+  (DB.__deleted || []).forEach(d => { tombKey[d.collection + '|' + d.id] = true; });
 
-  // 1. Purge locale des données mock ou supprimées du cloud
-  SYNC_COLLECTIONS.forEach(coll => {
-    if(coll === 'utilisateurs') return; // comptes admin locaux
-    const cloudIds = new Set((rows || []).filter(r => r.collection === coll && r.payload && r.payload.id).map(r => r.payload.id));
-    if(Array.isArray(DB[coll])){
-      const beforeLen = DB[coll].length;
-      DB[coll] = DB[coll].filter(item => {
-        // Toujours retirer les données de démo
-        if(coll === 'travaux' && (item.client === 'SCIEFA' || item.client === 'Zone Nord')) return false;
-        if(coll === 'charges' && (String(item.id||'').includes('-mv4wi58') || item.prestataire === 'Garage central')) return false;
-        // Si le cloud a des éléments pour cette collection, retirer les lignes locales synchronisées qui ont disparu du cloud
-        if(cloudIds.size > 0 && item._at && !cloudIds.has(item.id)) return false;
-        return true;
-      });
-      if(DB[coll].length !== beforeLen) updated++;
-    }
-  });
-
-  // 2. Intégration des éléments du cloud
+  // 1. Intégration des éléments du cloud (fusion par ligne, dernier écrivain gagne)
+  const ts = v => { const t = Date.parse(v || ''); return isNaN(t) ? 0 : t; };
   (rows || []).forEach(row => {
     if(!SYNC_COLLECTIONS.includes(row.collection)) return;
     const p = row.payload;
     if(!p || !p.id) return;
+    const tkey = row.collection + '|' + p.id;
     // on n'accepte jamais de compte administrateur depuis le cloud
     if(row.collection === 'utilisateurs' && p.role === 'admin') return;
     // on rejette toute donnée de test mock résiduelle
     if(row.collection === 'travaux' && (p.client === 'SCIEFA' || p.client === 'Zone Nord')) return;
     if(row.collection === 'charges' && (String(p.id||'').includes('-mv4wi58') || p.prestataire === 'Garage central')) return;
 
+    // Tombeau cloud : cette ligne a été supprimée → on supprime notre copie locale
+    if(p.deleted){
+      const arr = DB[row.collection];
+      if(Array.isArray(arr)){
+        const i = arr.findIndex(x => x.id === p.id);
+        if(i >= 0){ arr.splice(i, 1); removed++; }
+      }
+      markDeleted(row.collection, p.id, p._uid);
+      return;
+    }
+
     const arr = DB[row.collection];
     if(!Array.isArray(arr)) return;
+    // ligne supprimée localement (en attente de propagation) : ne pas la ramener
+    if(tombKey[tkey]) return;
     const i = arr.findIndex(x => x.id === p.id);
     if(i < 0){ arr.push(p); added++; }
     else{
       const localAt = arr[i]._at || '';
-      if((row.updated_at || '') >= localAt){ arr[i] = p; updated++; }
+      if(ts(row.updated_at) >= ts(localAt)){ arr[i] = p; updated++; }
     }
   });
 
-  if(added || updated){
+  // 2. Retirer d'éventuelles copies locales de lignes supprimées (tombstones locaux)
+  (DB.__deleted || []).forEach(d => {
+    const arr = DB[d.collection];
+    if(!Array.isArray(arr)) return;
+    const before = arr.length;
+    DB[d.collection] = arr.filter(x => x.id !== d.id);
+    if(DB[d.collection].length !== before) removed++;
+  });
+
+  if(added || updated || removed || (DB.__deleted || []).length !== deletedBefore){
     _snap = snapshotRows();
     saveDB();
   }
@@ -157,7 +239,7 @@ async function syncPull(){
   meta.lastPull = now;
   meta.lastPullCount = (rows || []).length;
   setSyncMeta(meta);
-  return { added, updated };
+  return { added, updated, removed };
 }
 
 /* ---------- Push + pull ---------- */

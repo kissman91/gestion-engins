@@ -174,7 +174,7 @@ async function refuse(code, attendu, label){
   run('importJSON(' + JSON.stringify(vieille) + ')');
   ok(run('utilisateurs().length') === avant && run("DB.settings.nom") === 'Ancien fichier', 'ancienne sauvegarde (sans comptes) : pas de verrouillage');
   run('seedDemo()');
-  ok(run('utilisateurs().length') === avant && run('DB.engins.length') > 0, 'données de démonstration : comptes conservés');
+  ok(run('utilisateurs().length') === avant && run('DB.engins.length') === 0, 'données de démonstration : comptes conservés, génération verrouillée');
 
   console.log('\n— Suppression —');
   const idAdmin2 = run("userByLogin('admin2').id");
