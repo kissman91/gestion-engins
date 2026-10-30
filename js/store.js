@@ -263,18 +263,45 @@ function kmTotalDepuis(enginId){
   return Math.max(0, max - depart);
 }
 
+/* ---------- Rémunération conducteur (rattachée à l'engin) ---------- */
+/* Découpe un travail en opérations payantes par type d'activité (voyage / ouverture) */
+function opsTravail(t){
+  const a = activiteById(t.activiteId);
+  const lib = (a ? a.libelle : '').toLowerCase();
+  const target = (lib + ' ' + (a && a.unite ? a.unite : '')).toLowerCase();
+  const q = Number(t.qte) || 0;
+  if(target.includes('transfert') || target.includes('voyage')) return { transferts: q, ouvertures: 0 };
+  if(target.includes('débardage') || target.includes('debardage') || target.includes('ouverture')) return { transferts: 0, ouvertures: q };
+  return { transferts: 0, ouvertures: 0 };
+}
+
+/* Salaire conducteur = activité réalisée avec l'engin × taux par opération.
+   Coût direct de la machine : aucune charge « salaire » saisie n'est requise. */
+function coutConducteur(range, enginId){
+  const taux = Number(DB.settings.salaireOperation) || 500;
+  let ops = 0;
+  filterTravaux(range, enginId).forEach(t => {
+    const o = opsTravail(t);
+    ops += o.transferts + o.ouvertures;
+  });
+  return Math.round(ops * taux * 100) / 100;
+}
+
 /* ---------- Indicateurs principaux ---------- */
 function computeKPIs(range, enginId){
   const trav = filterTravaux(range, enginId);
   const char = filterCharges(range, enginId);
 
   const ca = trav.reduce((s,t) => s + trvMontant(t), 0);
-  const depenses = char.reduce((s,c) => s + (Number(c.montant)||0), 0);
+  const coutCond = coutConducteur(range, enginId);
+  const depenses = char.reduce((s,c) => s + (Number(c.montant)||0), 0) + coutCond;
   const benefice = ca - depenses;
   const marge = ca > 0 ? (benefice / ca) * 100 : null;
 
   const parCat = { carburant:0, maintenance:0, salaire:0, autre:0 };
   char.forEach(c => { parCat[c.categorie] = (parCat[c.categorie]||0) + (Number(c.montant)||0); });
+  // salaire conducteur = activité × taux ; les charges « salaire » saisies (primes, etc.) s'ajoutent
+  parCat.salaire += coutCond;
 
   const litres = char.filter(c => c.categorie === 'carburant')
     .reduce((s,c) => s + (Number(c.litres)||0), 0);
@@ -309,6 +336,7 @@ function computeKPIs(range, enginId){
     ca, depenses, benefice, marge, parCat, litres, km, conso100, coutKm,
     nbTravaux: trav.length, nbCharges: char.length,
     voyages, ouvertures, caVoyages, caOuvertures,
+    coutConducteur: coutCond,
     parActivite
   };
 }
@@ -412,13 +440,10 @@ function computeConducteurs(range, enginId){
     const siens = trav.filter(t => t.conducteur === id);
     let transferts = 0, ouvertures = 0, autre = 0, ca = 0, nb = 0;
     siens.forEach(t => {
-      const a = activiteById(t.activiteId);
-      const lib = (a ? a.libelle : '').toLowerCase();
-      const target = (lib + ' ' + (a && a.unite ? a.unite : '')).toLowerCase();
-      const q = Number(t.qte) || 0;
-      if(target.includes('transfert') || target.includes('voyage')) transferts += q;
-      else if(target.includes('débardage') || target.includes('debardage') || target.includes('ouverture')) ouvertures += q;
-      else autre += q;
+      const o = opsTravail(t);
+      transferts += o.transferts;
+      ouvertures += o.ouvertures;
+      autre += (Number(t.qte)||0) - o.transferts - o.ouvertures;
       ca += trvMontant(t);
       nb++;
     });

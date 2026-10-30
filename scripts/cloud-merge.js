@@ -34,7 +34,7 @@ function conf(){
   const lines = fs.readFileSync(path.join(__dirname, '..', 'superbase.txt'), 'utf8')
     .split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   return {
-    url: (lines[1] || '').replace(/\/rest\/v1$/i, '').replace(/\/+$/, ''),
+    url: (lines[1] || '').replace(/\/+$/, '').replace(/\/rest\/v1$/i, ''),
     key: lines[2] || ''
   };
 }

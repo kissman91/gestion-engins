@@ -1,3 +1,6 @@
 # Identifiants et notes locales
 superbase.txt
 *.local
+
+# Sauvegardes d'appareil (données brutes, hachages de comptes)
+sauvegarde*.json

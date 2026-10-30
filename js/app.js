@@ -356,7 +356,7 @@ function renderDashboard(){
     { cls:'', label:'🛢 Consommation', value:k.conso100 !== null ? fmtNum(k.conso100,1) + ' L/100km' : '—', sub:k.km ? fmtNum(k.km) + ' km parcourus' : 'Km non renseignés' },
     { cls:'', label:'🔧 Maintenance', value:money(k.parCat.maintenance), sub:`${pctOf(k.parCat.maintenance, k.depenses)} des dépenses` },
     { cls:'', label:'👥 Salaires', value:money(k.parCat.salaire), sub:`${pctOf(k.parCat.salaire, k.depenses)} des dépenses` },
-    { cls:'', label:'🅿️ Coût au km', value:k.coutKm !== null ? money(k.coutKm) : '—', sub:'charges ÷ km' }
+    { cls:'', label:'🅿️ Coût au km', value:k.coutKm !== null ? money(k.coutKm) : '—', sub:'dépenses ÷ km' }
   ];
 
   $('#kpis').innerHTML = cards.map(c => `
@@ -1593,6 +1593,7 @@ function renderRapports(){
     const k = computeKPIs(range, e.id);
     const ref = Number(e.consoRef)||null;
     const ecart = (k.conso100 !== null && ref) ? ((k.conso100 - ref)/ref)*100 : null;
+    const autres = k.parCat.autre + (k.parCat.salaire - k.coutConducteur);   // autres charges + salaires saisis
     return `<tr>
       <td><b>${escapeHTML(e.nom)}</b></td>
       <td class="num">${k.voyages}</td>
@@ -1600,7 +1601,8 @@ function renderRapports(){
       <td class="num pos">${money(k.ca)}</td>
       <td class="num">${money(k.parCat.carburant)}</td>
       <td class="num">${money(k.parCat.maintenance)}</td>
-      <td class="num">${money(k.parCat.salaire + k.parCat.autre)}</td>
+      <td class="num neg">${money(k.coutConducteur)}</td>
+      <td class="num">${money(autres)}</td>
       <td class="num neg">${money(k.depenses)}</td>
       <td class="num ${k.benefice>=0?'pos':'neg'}">${money(k.benefice)}</td>
       <td class="num">${pct(k.marge)}</td>
@@ -1608,20 +1610,18 @@ function renderRapports(){
       <td class="num">${k.conso100 !== null ? fmtNum(k.conso100,1) : '—'}</td>
       <td class="num ${ecart===null?'':(ecart<=0?'pos':'neg')}">${ecart === null ? '—' : (ecart>0?'+':'')+fmtNum(ecart,1)+' %'}</td>
     </tr>`;
-  }).join('') || '<tr><td colspan="13" class="muted">Aucun engin.</td></tr>';
+  }).join('') || '<tr><td colspan="14" class="muted">Aucun engin.</td></tr>';
 
-  // --- salaires ---
-  $('#tableSalaires tbody').innerHTML = DB.employes.map(emp => {
-    const pays = rowsPour('charges').filter(c => c.categorie === 'salaire' && c.employeId === emp.id);
-    const total = pays.reduce((s,c) => s + (Number(c.montant)||0), 0);
-    return `<tr>
-      <td>${escapeHTML(emp.nom)}</td>
-      <td>${emp.role === 'conducteur' ? 'Conducteur' : emp.role === 'apprenti' ? 'Apprenti' : 'Autre'}</td>
-      <td class="num">${pays.length}</td>
-      <td class="num">${money(total)}</td>
-      <td class="num">${pays.length ? money(total/pays.length) : '—'}</td>
-    </tr>`;
-  }).join('') || '<tr><td colspan="5" class="muted">Aucun employé.</td></tr>';
+  // --- salaires (calculés sur l'activité réalisée : transferts + ouvertures) × taux ---
+  $('#tableSalaires tbody').innerHTML = computeConducteurs(['1970-01-01','2999-12-31']).map(r => `<tr>
+      <td>${escapeHTML(r.nom)}</td>
+      <td>${r.role === 'conducteur' ? 'Conducteur' : r.role === 'apprenti' ? 'Apprenti' : 'Autre'}</td>
+      <td class="num">${fmtNum(r.transferts)}</td>
+      <td class="num">${fmtNum(r.ouvertures)}</td>
+      <td class="num neg">${money(r.salaire)}</td>
+      <td class="num pos">${money(r.ca)}</td>
+      <td class="num ${r.reste>=0?'pos':'neg'}">${money(r.reste)}</td>
+    </tr>`).join('') || '<tr><td colspan="7" class="muted">Aucun conducteur.</td></tr>';
 
   // --- comparatif conducteurs ---
   renderConducteurs();
@@ -1633,11 +1633,12 @@ function renderRapports(){
   };
   $('#repExportEngins').onclick = () => {
     exportCSV('bilan_engins.csv',
-      ['Engin','Voyages','Ouvertures','CA','Carburant','Maintenance','Salaires+Autres','Total charges','Benefice','Marge %','Km','L/100km'],
+      ['Engin','Voyages','Ouvertures','CA','Carburant','Maintenance','Rémunération','Autres charges','Total charges','Benefice','Marge %','Km','L/100km'],
       DB.engins.map(e => {
         const k = computeKPIs(range, e.id);
+        const autres = k.parCat.autre + (k.parCat.salaire - k.coutConducteur);
         return [e.nom, k.voyages, k.ouvertures, k.ca, k.parCat.carburant, k.parCat.maintenance,
-                k.parCat.salaire + k.parCat.autre, k.depenses, k.benefice,
+                k.coutConducteur, autres, k.depenses, k.benefice,
                 k.marge===null?'':k.marge.toFixed(1), k.km, k.conso100===null?'':k.conso100.toFixed(1)];
       }));
   };
