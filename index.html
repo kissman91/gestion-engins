@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gestion Engins — Transferts &amp; Débardage</title>
+<link rel="stylesheet" href="css/style.css?v=c604b9d6">
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="brand">
+    <div class="brand-logo">🚜</div>
+    <div>
+      <div class="brand-name" id="brandName">Mon Entreprise</div>
+      <div class="brand-sub">Gestion engins</div>
+    </div>
+  </div>
+  <nav class="nav">
+    <a href="#/dashboard" data-view="dashboard"><span class="ico">📊</span> Tableau de bord</a>
+    <a href="#/travaux" data-view="travaux"><span class="ico">📋</span> Travaux réalisés</a>
+    <a href="#/terrain" data-view="terrain"><span class="ico">📱</span> Saisie rapide</a>
+    <a href="#/charges" data-view="charges"><span class="ico">💸</span> Charges</a>
+    <a href="#/factures" data-view="factures"><span class="ico">🧾</span> Factures</a>
+    <a href="#/engins" data-view="engins"><span class="ico">🚜</span> Engins</a>
+    <a href="#/maintenance" data-view="maintenance"><span class="ico">🔧</span> Maintenance</a>
+    <a href="#/rapports" data-view="rapports"><span class="ico">📈</span> Rapports</a>
+    <a href="#/utilisateurs" data-view="utilisateurs"><span class="ico">🔐</span> Utilisateurs</a>
+    <a href="#/parametres" data-view="parametres"><span class="ico">⚙️</span> Paramètres</a>
+  </nav>
+  <div class="sidebar-foot">
+    <div class="user-chip" id="userChip">
+      <span class="uc-ico">👤</span>
+      <span class="uc-nom" id="ucNom">—</span>
+      <button class="btn-icon" id="btnLogout" title="Se déconnecter">⏻</button>
+    </div>
+    <div id="periodSummaryMini"></div>
+    <button class="btn btn-ghost btn-sm" id="btnBackupQuick">💾 Sauvegarde</button>
+  </div>
+</aside>
+
+<main class="main">
+
+  <!-- ============ TABLEAU DE BORD ============ -->
+  <section id="view-dashboard" class="view">
+    <div class="view-head">
+      <h1>Tableau de bord</h1>
+      <div class="period-bar">
+        <button type="button" class="btn btn-ghost btn-sm" id="btnDashSync" title="Récupérer les dernières saisies du cloud">🔄 Synchroniser</button>
+        <select id="periodSelect">
+          <option value="month">Mois en cours</option>
+          <option value="lastmonth">Mois dernier</option>
+          <option value="3months">3 derniers mois</option>
+          <option value="year">Année en cours</option>
+          <option value="all">Tout l'historique</option>
+          <option value="custom">Personnalisé…</option>
+        </select>
+        <input type="date" id="periodFrom" class="hidden">
+        <span class="hidden" id="periodSep">→</span>
+        <input type="date" id="periodTo" class="hidden">
+      </div>
+    </div>
+
+    <div class="kpis" id="kpis"></div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h2>CA vs Dépenses <span class="card-sub">par mois</span></h2>
+        <canvas id="chartMonthly" height="220"></canvas>
+      </div>
+      <div class="card">
+        <h2>Répartition des dépenses</h2>
+        <canvas id="chartSplit" height="220"></canvas>
+        <div class="legend" id="chartSplitLegend"></div>
+      </div>
+      <div class="card">
+        <h2>Chiffre d'affaires par engin</h2>
+        <canvas id="chartEngins" height="220"></canvas>
+      </div>
+      <div class="card">
+        <h2>Objectif mensuel de CA</h2>
+        <div id="objectifBox"></div>
+        <h2 style="margin-top:18px">Indicateurs avancés</h2>
+        <div class="mini-kpis" id="advKpis"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Suivi par engin <span class="card-sub">période sélectionnée</span></h2>
+      <div class="table-wrap">
+        <table class="table" id="tableEnginsKpi">
+          <thead>
+            <tr>
+              <th>Engin</th><th class="num">Voyages</th><th class="num">Ouvertures</th>
+              <th class="num">CA</th><th class="num">Dépenses</th><th class="num">Bénéfice</th>
+              <th class="num">Km</th><th class="num">L/100km</th><th class="num">Coût/km</th><th class="num">Marge</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Activité récente</h2>
+      <div id="recentList" class="recent"></div>
+    </div>
+  </section>
+
+  <!-- ============ TRAVAUX ============ -->
+  <section id="view-travaux" class="view hidden">
+    <div class="view-head"><h1>Travaux réalisés</h1></div>
+
+    <div class="card form-card">
+      <h2 id="travauxFormTitle">Enregistrer un travail</h2>
+      <form id="formTravaux">
+        <input type="hidden" id="trvId">
+        <div class="form-grid">
+          <label>Date
+            <input type="date" id="trvDate" required>
+          </label>
+          <label>Activité
+            <select id="trvActivite" required></select>
+          </label>
+          <label>Engin
+            <select id="trvEngin" required></select>
+          </label>
+          <label>Quantité <span class="hint" id="trvUnite">(voyages)</span>
+            <input type="number" id="trvQte" min="0" step="any" required placeholder="0">
+          </label>
+          <label>Prix unitaire
+            <input type="number" id="trvPrix" min="0" step="any" required>
+          </label>
+          <label>Montant total
+            <input type="text" id="trvMontant" class="calc" readonly>
+          </label>
+          <label>Conducteur
+            <select id="trvConducteur"><option value="">—</option></select>
+          </label>
+          <label>Client / chantier
+            <input type="text" id="trvClient" placeholder="Ex. SCIEFA, Zone Nord…">
+          </label>
+        </div>
+        <label class="full">Notes
+          <textarea id="trvNotes" rows="2" placeholder="Facultatif"></textarea>
+        </label>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" id="trvSubmit">➕ Enregistrer le travail</button>
+          <button type="button" class="btn btn-ghost hidden" id="trvCancel">Annuler</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Historique des travaux</h2>
+        <div class="filters">
+          <input type="month" id="trvFilterMonth">
+          <select id="trvFilterEngin"><option value="">Tous les engins</option></select>
+          <button class="btn btn-ghost btn-sm" id="trvExport" data-priv="global:export">⬇ CSV</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="table" id="tableTravaux">
+          <thead>
+            <tr><th>Date</th><th>Activité</th><th>Engin</th><th class="num">Qté</th><th class="num">P.U.</th><th class="num">Montant</th><th>Client</th><th></th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="table-foot" id="travauxFoot"></div>
+    </div>
+  </section>
+
+  <!-- ============ CHARGES ============ -->
+  <section id="view-charges" class="view hidden">
+    <div class="view-head"><h1>Charges</h1></div>
+
+    <div class="card form-card">
+      <h2 id="chargesFormTitle">Enregistrer une charge</h2>
+      <form id="formCharges">
+        <input type="hidden" id="chId">
+        <div class="form-grid">
+          <label>Date
+            <input type="date" id="chDate" required>
+          </label>
+          <label>Catégorie
+            <select id="chCategorie">
+              <option value="carburant">Carburant</option>
+              <option value="maintenance">Maintenance / entretien</option>
+              <option value="salaire">Salaire</option>
+              <option value="autre">Autre charge</option>
+            </select>
+          </label>
+          <label>Engin concerné
+            <select id="chEngin"><option value="">— Aucun / global —</option></select>
+          </label>
+          <label id="chLibelleWrap">Libellé
+            <input type="text" id="chLibelle" placeholder="Ex. pneus, réparation…">
+          </label>
+
+          <label class="cat-carburant">Litres
+            <input type="number" id="chLitres" min="0" step="0.01" placeholder="0">
+          </label>
+          <label class="cat-carburant">Prix du litre
+            <input type="number" id="chPrixLitre" min="0" step="any" placeholder="0">
+          </label>
+          <label class="cat-carburant">Compteur (km)
+            <input type="number" id="chKm" min="0" step="any" placeholder="0">
+          </label>
+
+          <label class="cat-maintenance">Type d'intervention
+            <select id="chTypeMaint"></select>
+          </label>
+          <label class="cat-maintenance">Prestataire
+            <input type="text" id="chPresta" placeholder="Ex. garage Ali, magasin…">
+          </label>
+
+          <label class="cat-salaire">Employé
+            <select id="chEmploye"><option value="">—</option></select>
+          </label>
+          <label class="cat-salaire">Mois concerné
+            <input type="month" id="chMois">
+          </label>
+
+          <label>Montant
+            <input type="number" id="chMontant" min="0" step="any" required placeholder="0">
+          </label>
+        </div>
+        <label class="full">Notes
+          <textarea id="chNotes" rows="2" placeholder="Facultatif"></textarea>
+        </label>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" id="chSubmit">➕ Enregistrer la charge</button>
+          <button type="button" class="btn btn-ghost hidden" id="chCancel">Annuler</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Historique des charges</h2>
+        <div class="filters">
+          <input type="month" id="chFilterMonth">
+          <select id="chFilterCat">
+            <option value="">Toutes catégories</option>
+            <option value="carburant">Carburant</option>
+            <option value="maintenance">Maintenance</option>
+            <option value="salaire">Salaires</option>
+            <option value="autre">Autres</option>
+          </select>
+          <select id="chFilterEngin"><option value="">Tous les engins</option></select>
+          <button class="btn btn-ghost btn-sm" id="chExport" data-priv="global:export">⬇ CSV</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="table" id="tableCharges">
+          <thead>
+            <tr><th>Date</th><th>Catégorie</th><th>Détail</th><th>Engin</th><th class="num">Montant</th><th></th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="table-foot" id="chargesFoot"></div>
+    </div>
+  </section>
+
+  <!-- ============ ENGINS ============ -->
+  <section id="view-engins" class="view hidden">
+    <div class="view-head">
+      <h1>Engins</h1>
+      <button class="btn btn-primary" id="btnNewEngin" data-priv="engins:edit">➕ Nouvel engin</button>
+    </div>
+
+    <div class="card form-card hidden" id="enginFormCard">
+      <h2 id="enginFormTitle">Nouvel engin</h2>
+      <form id="formEngin">
+        <input type="hidden" id="engId">
+        <div class="form-grid">
+          <label>Nom / Désignation
+            <input type="text" id="engNom" required placeholder="Ex. Pelle CAT 320">
+          </label>
+          <label>Immatriculation
+            <input type="text" id="engImmat" placeholder="Ex. AB-123-CD">
+          </label>
+          <label>Type
+            <input type="text" id="engType" placeholder="Ex. Pelle, Camion, Débusqueur…">
+          </label>
+          <label>Conducteur habituel
+            <select id="engConducteur"><option value="">—</option></select>
+          </label>
+          <label>Date de mise en service
+            <input type="date" id="engDate">
+          </label>
+          <label>Compteur au départ (km)
+            <input type="number" id="engKmDepart" min="0" step="1" value="0">
+          </label>
+          <label>Consommation de référence <span class="hint">L/100km</span>
+            <input type="number" id="engConsoRef" min="0" step="0.1" placeholder="Ex. 35">
+          </label>
+          <label>Prix d'achat (facultatif)
+            <input type="number" id="engPrixAchat" min="0" step="1">
+          </label>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">💾 Enregistrer l'engin</button>
+          <button type="button" class="btn btn-ghost" id="engCancel">Annuler</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="engin-grid" id="enginGrid"></div>
+
+    <div id="enginDetail"></div>
+  </section>
+
+  <!-- ============ MAINTENANCE ============ -->
+  <section id="view-maintenance" class="view hidden">
+    <div class="view-head">
+      <h1>Maintenance</h1>
+      <a class="btn btn-primary" href="#/charges" data-priv="charges:edit">➕ Intervention</a>
+    </div>
+
+    <div class="card">
+      <h2>Alertes d'entretien préventif</h2>
+      <div id="alertesMaint" class="alertes"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Échéancier préventif</h2>          <button class="btn btn-ghost btn-sm" id="btnNewPrevention" data-priv="maintenance:edit">➕ Régler les intervalles</button>
+      </div>
+      <form id="formPrevention" class="hidden inline-form">
+        <input type="hidden" id="prevId">
+        <div class="form-grid">
+          <label>Intervention
+            <input type="text" id="prevLibelle" required placeholder="Ex. Vidange moteur">
+          </label>
+          <label>Tous les (km)
+            <input type="number" id="prevKm" min="0" step="100" placeholder="Ex. 5000">
+          </label>
+          <label>Tous les (mois)
+            <input type="number" id="prevMois" min="0" step="1" placeholder="Ex. 6">
+          </label>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary btn-sm">💾 Enregistrer</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="prevCancel">Annuler</button>
+        </div>
+      </form>
+      <div class="table-wrap">
+        <table class="table" id="tablePreventions">
+          <thead><tr><th>Intervention</th><th class="num">Tous les (km)</th><th class="num">Tous les (mois)</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Prochaines échéances par engin</h2>
+      </div>
+      <div class="table-wrap">
+        <table class="table" id="tableEcheances">
+          <thead><tr><th>Engin</th><th>Intervention</th><th>Dernière</th><th class="num">Km dernière</th><th>Prochaine (date)</th><th class="num">Prochain (km)</th><th>État</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Historique des interventions</h2>
+      <div class="table-wrap">
+        <table class="table" id="tableHistMaint">
+          <thead><tr><th>Date</th><th>Engin</th><th>Intervention</th><th>Prestataire</th><th class="num">Km</th><th class="num">Coût</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="table-foot" id="maintFoot"></div>
+    </div>
+  </section>
+
+  <!-- ============ RAPPORTS ============ -->
+  <section id="view-rapports" class="view hidden">
+    <div class="view-head">
+      <h1>Rapports</h1>
+      <div class="filters">
+        <input type="month" id="repMonth">
+        <button class="btn btn-ghost btn-sm" id="repExportMensuel" data-priv="global:export">⬇ CSV mensuel</button>
+        <button class="btn btn-ghost btn-sm" id="repExportEngins" data-priv="global:export">⬇ CSV par engin</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Synthèse mensuelle</h2>
+      <div class="table-wrap">
+        <table class="table" id="tableMensuel">
+          <thead>
+            <tr>
+              <th>Mois</th><th class="num">CA</th><th class="num">Charges</th><th class="num">Bénéfice</th>
+              <th class="num">Marge</th><th class="num">Carburant (L)</th><th class="num">L/100km</th><th class="num">Voyages</th><th class="num">Ouvertures</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Bilan par engin <span class="card-sub">tout l'historique</span></h2>
+      <div class="table-wrap">
+        <table class="table" id="tableBilanEngins">
+          <thead>
+            <tr>
+              <th>Engin</th><th class="num">Voyages</th><th class="num">Ouvertures</th><th class="num">CA</th>
+              <th class="num">Carburant</th><th class="num">Maintenance</th><th class="num">Rémunération</th><th class="num">Autres charges</th>
+              <th class="num">Total charges</th><th class="num">Bénéfice</th><th class="num">Marge</th>
+              <th class="num">Km</th><th class="num">L/100km</th><th class="num">Écart conso</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <h2>Comparatif par conducteur</h2>
+        <div class="filters">
+          <select id="condTaux" title="Rémunération par opération"></select>
+          <button class="btn btn-ghost btn-sm" id="repExportConducteurs" data-priv="global:export">⬇ CSV conducteurs</button>
+        </div>
+      </div>
+      <p class="muted" style="margin:4px 0 10px">Salaire = (nombre de transferts + nombre d'ouvertures) × tarif par opération — période sélectionnée ci-dessous.</p>
+      <div class="filters" style="margin-bottom:10px">
+        <input type="month" id="condMonth">
+        <select id="condEngin"><option value="">Tous les engins</option></select>
+      </div>
+      <div class="table-wrap">
+        <table class="table" id="tableConducteurs">
+          <thead>
+            <tr>
+              <th>Conducteur</th><th>Rôle</th><th class="num">Travaux</th>
+              <th class="num">Transferts</th><th class="num">Ouvertures</th>
+              <th class="num">CA généré</th>
+              <th class="num">Salaire</th>
+              <th class="num">Reste (CA − salaire)</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+          <tfoot></tfoot>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Salaires &amp; personnel</h2>
+      <div class="table-wrap">
+        <table class="table" id="tableSalaires">
+          <thead><tr><th>Employé</th><th>Rôle</th><th class="num">Transferts</th><th class="num">Ouvertures</th><th class="num">Salaire</th><th class="num">CA généré</th><th class="num">Reste</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SAISIE RAPIDE (terrain / mobile) ============ -->
+  <section id="view-terrain" class="view hidden">
+    <div class="view-head">
+      <h1>Saisie rapide <span class="card-sub">chantier</span></h1>
+      <div class="filters"><span id="trStatus" class="muted"></span></div>
+    </div>
+
+    <div class="card form-card">
+      <h2>Nouvelle saisie</h2>
+      <form id="formTerrain" class="terrain-form">
+        <div class="terrain-acts" id="trActBtns"></div>
+        <div class="form-grid">
+          <label>Engin
+            <select id="trEngin" required></select>
+          </label>
+          <label>Conducteur
+            <select id="trConducteur"><option value="">—</option></select>
+          </label>
+          <label>Client
+            <input list="trClients" id="trClient" placeholder="Nom du client">
+            <datalist id="trClients"></datalist>
+          </label>
+          <label>Date
+            <input type="date" id="trDate" required>
+          </label>
+          <label>Prix unitaire
+            <input type="number" id="trPrix" min="0" step="any" placeholder="Prix unitaire">
+          </label>
+        </div>
+        <div class="terrain-count">
+          <button type="button" class="tc-btn" id="trMinus">−</button>
+          <div class="tc-value">
+            <input type="number" id="trQte" min="0" step="any" value="1" inputmode="decimal">
+            <span class="tc-unit" id="trUnite">voyages</span>
+          </div>
+          <button type="button" class="tc-btn" id="trPlus">+</button>
+        </div>
+        <div class="terrain-chips" id="trChips"></div>
+        <div class="terrain-montant" id="trMontant">0 FCFA</div>
+        <button type="submit" class="btn btn-primary terrain-save">✅ Enregistrer la saisie</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="card-head" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <h2>Saisies du jour</h2>
+        <div class="filters">
+          <span id="trJourRecap" class="muted"></span>
+          <button class="btn btn-ghost btn-sm" id="trSync" data-priv="global:sync" title="Envoyer / récupérer les données du cloud">☁️ Synchroniser</button>
+        </div>
+      </div>
+      <div id="trJourList" class="recent"></div>
+    </div>
+  </section>
+
+  <!-- ============ FACTURES ============ -->
+  <section id="view-factures" class="view hidden">
+    <div class="view-head">
+      <h1>Factures</h1>
+      <div class="filters">
+        <input type="text" id="facSearch" placeholder="🔎 Rechercher un client…">
+        <button class="btn btn-primary btn-sm" id="facNew" data-priv="factures:edit">➕ Nouvelle facture</button>
+      </div>
+    </div>
+
+    <div class="card form-card hidden" id="facFormCard">
+      <h2 id="facTitle">Nouvelle facture</h2>
+      <form id="formFacture">
+        <div class="form-grid">
+          <label>Client
+            <input list="facClients" id="facClient" required placeholder="Nom du client">
+            <datalist id="facClients"></datalist>
+          </label>
+          <label>Date de facture
+            <input type="date" id="facDate" required>
+          </label>
+          <label>Du
+            <input type="date" id="facDu">
+          </label>
+          <label>Au
+            <input type="date" id="facAu">
+          </label>
+          <label>TVA (%)
+            <input type="number" id="facTva" min="0" max="100" step="0.1" value="0">
+          </label>
+          <label>Notes / mention
+            <input type="text" id="facNote" placeholder="Ex. Paiement à 30 jours">
+          </label>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">👁 Aperçu</button>
+          <button type="button" class="btn btn-ghost" id="facCancel">Annuler</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-head" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+          <h2>Facture <span class="card-sub" id="facPreviewNum">aperçu</span></h2>
+          <div class="filters">
+            <button class="btn btn-ghost btn-sm" id="facSave">💾 Enregistrer</button>
+            <button class="btn btn-primary btn-sm" id="facPrint">🖨 Imprimer / PDF</button>
+          </div>
+        </div>
+        <div id="facturePreview" class="facture-a4">
+          <p class="muted">Choisissez un client et une période, puis « Aperçu ».</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Factures enregistrées</h2>
+        <div class="table-wrap">
+          <table class="table" id="tableFactures">
+            <thead><tr><th>N°</th><th>Date</th><th>Client</th><th class="num">Total TTC</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ UTILISATEURS ============ -->
+  <section id="view-utilisateurs" class="view hidden">
+    <div class="view-head">
+      <h1>Utilisateurs <span class="card-sub">comptes &amp; privilèges</span></h1>
+      <button class="btn btn-primary" id="btnNewUser" data-priv="utilisateurs:edit">➕ Nouvel utilisateur</button>
+    </div>
+
+    <div class="card form-card hidden" id="userFormCard">
+      <h2 id="userFormTitle">Nouvel utilisateur</h2>
+      <form id="formUser">
+        <input type="hidden" id="usrId">
+        <div class="form-grid">
+          <label>Nom complet
+            <input type="text" id="usrNom" required placeholder="Ex. Kossi A.">
+          </label>
+          <label>Identifiant <span class="hint">(pour se connecter)</span>
+            <input type="text" id="usrLogin" required placeholder="Ex. kossi" autocomplete="off">
+          </label>
+          <label id="usrMdpWrap">Mot de passe
+            <input type="password" id="usrMdp" required minlength="4" placeholder="4 caractères minimum" autocomplete="new-password">
+          </label>
+          <label id="usrMdp2Wrap">Confirmer le mot de passe
+            <input type="password" id="usrMdp2" required minlength="4" autocomplete="new-password">
+          </label>
+          <label>Rôle
+            <select id="usrRole"></select>
+          </label>
+          <label>Employé lié <span class="hint">(facultatif, pour la saisie terrain)</span>
+            <select id="usrEmploye"><option value="">—</option></select>
+          </label>
+        </div>
+        <p class="muted" id="usrRoleDesc"></p>
+        <label class="check-line"><input type="checkbox" id="usrActif" checked> Compte actif (l'utilisateur peut se connecter)</label>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">💾 Enregistrer le compte</button>
+          <button type="button" class="btn btn-ghost" id="usrCancel">Annuler</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Définition des privilèges</h2>
+        <span class="muted" id="privMode">Aucun utilisateur sélectionné</span>
+      </div>
+      <div class="table-wrap">
+        <table class="table priv-table" id="tablePrivs">
+          <thead>
+            <tr><th>Module</th><th class="ctr">Voir</th><th class="ctr">Créer / modifier</th><th class="ctr">Supprimer</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="priv-global" id="privGlobal"></div>
+      <p class="muted" id="privHint">Choisissez un compte dans la liste pour ajuster ses privilèges, ou créez-en un nouveau.</p>
+    </div>
+
+    <div class="card">
+      <h2>Comptes existants</h2>
+      <div class="table-wrap">
+        <table class="table" id="tableUsers">
+          <thead>
+            <tr><th>Nom</th><th>Identifiant</th><th>Rôle</th><th>Statut</th><th>Dernière connexion</th><th></th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="muted">Les comptes (sauf l'administrateur) sont partagés entre vos appareils par le cloud : créez-les ici, ils se connecteront depuis n'importe quel poste ou téléphone connecté au même projet Supabase. Mots de passe transmis sous forme hachée (SHA-256 salé), jamais en clair.</p>
+    </div>
+  </section>
+
+  <!-- ============ ACCÈS REFUSÉ ============ -->
+  <section id="view-acces-refuse" class="view hidden">
+    <div class="view-head"><h1>⛔ Accès refusé</h1></div>
+    <div class="card">
+      <p>Votre compte ne dispose pas des privilèges nécessaires pour afficher cette page.</p>
+      <p class="muted" id="accesRefuseCle"></p>
+      <div class="form-actions">
+        <a class="btn btn-primary" id="accesRetour" href="#/dashboard">↩ Retour à l'accueil</a>
+        <button class="btn btn-ghost" id="btnLogout2">⏻ Changer de compte</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PARAMÈTRES ============ -->
+  <section id="view-parametres" class="view hidden">
+    <div class="view-head"><h1>Paramètres</h1></div>
+
+    <div class="card form-card">
+      <h2>Entreprise &amp; tarifs</h2>
+      <form id="formSettings">
+        <div class="form-grid">
+          <label>Nom de l'entreprise
+            <input type="text" id="setNom">
+          </label>
+          <label>Devise / monnaie
+            <input type="text" id="setDevise" placeholder="FCFA">
+          </label>
+          <label>Prix du transfert (par voyage)
+            <input type="number" id="setPrixTransfert" min="0" step="any">
+          </label>
+          <label>Prix du débardage (par ouverture)
+            <input type="number" id="setPrixDebardage" min="0" step="any">
+          </label>
+          <label>Objectif mensuel de CA
+            <input type="number" id="setObjectif" min="0" step="any" placeholder="0 = aucun">
+          </label>
+          <label>Rémunération par opération <span class="hint">(transfert ou ouverture)</span>
+            <input type="number" id="setSalaireOp" min="0" step="any" placeholder="500">
+          </label>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">💾 Enregistrer</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Activités facturables</h2>
+      <form id="formActivite" class="inline-form">
+        <input type="hidden" id="actId">
+        <div class="form-grid">
+          <label>Libellé
+            <input type="text" id="actLibelle" required placeholder="Ex. Transport de billes">
+          </label>
+          <label>Unité de facturation
+            <input type="text" id="actUnite" required placeholder="Ex. voyage, ouverture, heure, m³">
+          </label>
+          <label>Prix par défaut
+            <input type="number" id="actPrix" min="0" step="any" required>
+          </label>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary btn-sm">➕ Ajouter l'activité</button>
+          <button type="button" class="btn btn-ghost btn-sm hidden" id="actCancel">Annuler</button>
+        </div>
+      </form>
+      <div class="table-wrap">
+        <table class="table" id="tableActivites">
+          <thead><tr><th>Activité</th><th>Unité</th><th class="num">Prix par défaut</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Personnel</h2>
+      <form id="formEmploye" class="inline-form">
+        <input type="hidden" id="empId">
+        <div class="form-grid">
+          <label>Nom
+            <input type="text" id="empNom" required placeholder="Nom de l'employé">
+          </label>
+          <label>Rôle
+            <select id="empRole">
+              <option value="conducteur">Conducteur</option>
+              <option value="apprenti">Apprenti</option>
+              <option value="autre">Autre</option>
+            </select>
+          </label>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary btn-sm">➕ Ajouter</button>
+          <button type="button" class="btn btn-ghost btn-sm hidden" id="empCancel">Annuler</button>
+        </div>
+      </form>
+      <div class="table-wrap">
+        <table class="table" id="tableEmployes">
+          <thead><tr><th>Nom</th><th>Rôle</th><th class="num">Total salaires payés</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>☁️ Synchronisation multi-appareils <span class="card-sub">Supabase (facultatif)</span></h2>
+      <p class="muted">Connectez Supabase pour saisir les travaux depuis le téléphone sur le chantier et les retrouver sur ce poste. Exécutez d'abord <code>supabase.sql</code> dans l'éditeur SQL de votre projet Supabase, puis collez son URL et sa clé <i>anon</i> ci-dessous.</p>
+      <div class="form-grid">
+        <label>URL du projet
+          <input type="url" id="sbUrl" placeholder="https://xxxx.supabase.co">
+        </label>
+        <label>Clé anon (publishable)
+          <input type="password" id="sbKey" placeholder="eyJhbGciOi…" autocomplete="off">
+        </label>
+      </div>
+      <label class="check-line"><input type="checkbox" id="sbAuto"> Synchroniser automatiquement après chaque saisie</label>
+      <div class="form-actions">
+        <button type="button" class="btn btn-primary" id="sbSave" data-priv="global:sync">💾 Enregistrer la connexion</button>
+        <button type="button" class="btn btn-ghost" id="sbTest" data-priv="global:sync">🧪 Tester la connexion</button>
+        <button type="button" class="btn btn-ghost" id="sbPush" data-priv="global:sync">⬆ Envoyer mes données</button>
+        <button type="button" class="btn btn-ghost" id="sbPull" data-priv="global:sync">⬇ Récupérer depuis le cloud</button>
+        <span id="sbStatus" class="muted"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Données &amp; sauvegarde</h2>
+      <p class="muted">Les données sont enregistrées localement dans ce navigateur. Pensez à exporter une sauvegarde régulièrement.</p>
+      <div class="form-actions">
+        <button class="btn btn-primary" id="btnExportJson" data-priv="global:export">⬇ Exporter la sauvegarde (JSON)</button>
+        <label class="btn btn-ghost" for="importFile" data-priv="global:export">⬆ Importer une sauvegarde</label>
+        <input type="file" id="importFile" accept="application/json" class="hidden">
+        <button class="btn btn-danger" id="btnReset" data-priv="parametres:edit">🗑 Tout effacer</button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<div id="toast" class="toast hidden"></div>
+
+<!-- ============ ÉCRAN DE CONNEXION ============ -->
+<div id="authScreen" class="auth hidden">
+  <div class="auth-box">
+    <div class="auth-logo">🚜</div>
+    <div class="auth-t" id="authTitle">Connexion</div>
+    <div class="auth-s" id="authSub">Gestion Engins — Transferts &amp; Débardage</div>
+
+    <form id="formLogin" class="auth-form">
+      <label>Identifiant
+        <input type="text" id="lgLogin" required autocomplete="username" autofocus>
+      </label>
+      <label>Mot de passe
+        <input type="password" id="lgMdp" required autocomplete="current-password">
+      </label>
+      <label class="check-line"><input type="checkbox" id="lgRemember"> Rester connecté sur cet appareil</label>
+      <button type="submit" class="btn btn-primary auth-btn">🔓 Se connecter</button>
+      <div class="auth-err hidden" id="lgErr"></div>
+    </form>
+
+    <div id="cloudBootBox" class="auth-form">
+      <p class="muted">Cet appareil n'a pas encore de compte : récupérez ceux créés par l'administrateur via le cloud (Supabase), puis connectez-vous.</p>
+      <form id="formCloudBoot" class="auth-col">
+        <label>URL du projet Supabase
+          <input type="url" id="cbUrl" placeholder="https://xxxx.supabase.co">
+        </label>
+        <label>Clé anon (publishable)
+          <input type="password" id="cbKey" placeholder="eyJhbGciOi…" autocomplete="off">
+        </label>
+        <button type="submit" class="btn btn-primary auth-btn">⬇ Récupérer les comptes</button>
+        <div class="auth-err hidden" id="cbErr"></div>
+        <div class="muted" id="cbStatus"></div>
+      </form>
+      <button type="button" class="btn btn-ghost auth-alt" id="btnShowPin" style="font-size:12px;opacity:.7">🔐 Espace Propriétaire (Code PIN)</button>
+    </div>
+
+    <form id="formAdminPin" class="auth-col hidden">
+      <p class="muted">Accès réservé au patron : saisissez votre code PIN maître pour déverrouiller la création du compte administrateur sur cet appareil.</p>
+      <label>Code PIN Maître
+        <input type="password" id="adminPinInput" required placeholder="Code PIN maître" autocomplete="off" inputmode="numeric">
+      </label>
+      <button type="submit" class="btn btn-primary auth-btn">🔓 Déverrouiller l'accès</button>
+      <div class="auth-err hidden" id="pinErr"></div>
+      <button type="button" class="btn btn-ghost auth-alt" id="btnCancelPin">⬅ Retour</button>
+    </form>
+
+    <form id="formFirstAdmin" class="auth-col hidden">
+      <p class="muted">Première installation : créez le compte administrateur qui créera les autres comptes et définira leurs privilèges. Configurez ensuite Supabase dans Paramètres pour partager les comptes et les données.</p>
+      <label>Nom complet
+        <input type="text" id="faNom" required placeholder="Ex. Kossi A.">
+      </label>
+      <label>Identifiant
+        <input type="text" id="faLogin" required placeholder="Ex. admin" autocomplete="off">
+      </label>
+      <label>Mot de passe
+        <input type="password" id="faMdp" required minlength="4" autocomplete="new-password">
+      </label>
+      <label>Confirmer le mot de passe
+        <input type="password" id="faMdp2" required minlength="4" autocomplete="new-password">
+      </label>
+      <button type="submit" class="btn btn-primary auth-btn">🛡 Créer l'administrateur</button>
+      <div class="auth-err hidden" id="faErr"></div>
+      <button type="button" class="btn btn-ghost auth-alt" id="btnShowCloud">⬅ Retour : récupérer les comptes du cloud</button>
+    </form>
+
+    <div class="auth-foot">
+      Comptes partagés entre vos appareils via Supabase (mots de passe hachés) · le compte administrateur reste local à son poste.<br>
+      Identifiant oublié ? Effacez les données du site dans le navigateur pour repartir de zéro.
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="js/store.js?v=c604b9d6"></script>
+<script src="js/charts.js?v=c604b9d6"></script>
+<script src="js/sync.js?v=c604b9d6"></script>
+<script src="js/app.js?v=c604b9d6"></script>
+</body>
+</html>
