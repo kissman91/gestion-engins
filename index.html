@@ -25,6 +25,7 @@
     <a href="#/engins" data-view="engins"><span class="ico">🚜</span> Engins</a>
     <a href="#/maintenance" data-view="maintenance"><span class="ico">🔧</span> Maintenance</a>
     <a href="#/rapports" data-view="rapports"><span class="ico">📈</span> Rapports</a>
+    <a href="#/bulletins" data-view="bulletins"><span class="ico">📄</span> Bulletins de salaire</a>
     <a href="#/utilisateurs" data-view="utilisateurs"><span class="ico">🔐</span> Utilisateurs</a>
     <a href="#/parametres" data-view="parametres"><span class="ico">⚙️</span> Paramètres</a>
   </nav>
@@ -586,8 +587,83 @@
     </div>
   </section>
 
-  <!-- ============ UTILISATEURS ============ -->
-  <section id="view-utilisateurs" class="view hidden">
+  <!-- ============ BULLETINS DE SALAIRE ============ -->
+  <section id="view-bulletins" class="view hidden">
+    <div class="view-head">
+      <h1>📄 Bulletins de salaire</h1>
+      <div class="filters">
+        <button class="btn btn-ghost btn-sm" id="bulBtnCsv" data-priv="global:export">⬇ CSV tous les employés</button>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <!-- Panneau de paramètres -->
+      <div class="card form-card">
+        <h2>Générer un bulletin</h2>
+        <div class="form-grid">
+          <label>Employé / Conducteur
+            <select id="bulEmploye"><option value="">— Choisir —</option></select>
+          </label>
+          <label>Mois
+            <input type="month" id="bulMois">
+          </label>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-ghost" id="bulBtnApercu">🔄 Actualiser l'aperçu</button>
+          <button class="btn btn-primary" id="bulBtnImprimer" disabled data-priv="rapports:vue">🖨 Imprimer / PDF</button>
+        </div>
+        <p class="muted" style="margin-top:14px;font-size:12px;">
+          Le salaire est calculé automatiquement à partir des travaux enregistrés pour cet employé
+          (transferts + ouvertures × taux unitaire défini dans Paramètres). Les primes et retenues
+          saisies dans <a href="#/charges" style="color:var(--primary)">Charges → Salaire</a>
+          sont intégrées au bulletin.
+        </p>
+      </div>
+
+      <!-- Aperçu du bulletin -->
+      <div class="card">
+        <div class="card-head">
+          <h2>Aperçu du bulletin <span class="card-sub" id="bulPreviewLabel">sélectionnez un employé</span></h2>
+        </div>
+        <div id="bulPreview">
+          <p class="muted" style="padding:20px;">Choisissez un employé pour générer l'aperçu.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tableau récapitulatif de tous les employés -->
+    <div class="card">
+      <div class="card-head">
+        <h2>Récapitulatif du mois <span class="card-sub" id="bulMoisLabel"></span></h2>
+        <div class="filters">
+          <span class="muted" style="font-size:12px;">Basé sur le mois sélectionné ci-dessus</span>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="table" id="tableBulletins">
+          <thead>
+            <tr>
+              <th>Employé</th>
+              <th>Rôle</th>
+              <th class="num">Transferts</th>
+              <th class="num">Ouvertures</th>
+              <th class="num">Nb ops</th>
+              <th class="num">CA généré</th>
+              <th class="num">Salaire brut</th>
+              <th class="num">Primes</th>
+              <th class="num">Retenues</th>
+              <th class="num">Net à payer</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+          <tfoot></tfoot>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ UTILISATEURS ============ -->  <section id="view-utilisateurs" class="view hidden">
     <div class="view-head">
       <h1>Utilisateurs <span class="card-sub">comptes &amp; privilèges</span></h1>
       <button class="btn btn-primary" id="btnNewUser" data-priv="utilisateurs:edit">➕ Nouvel utilisateur</button>
@@ -872,6 +948,7 @@
 <script src="js/store.js?v=__BUILD__"></script>
 <script src="js/charts.js?v=__BUILD__"></script>
 <script src="js/sync.js?v=__BUILD__"></script>
+<script src="js/bulletins.js?v=__BUILD__"></script>
 <script src="js/app.js?v=__BUILD__"></script>
 </body>
 </html>

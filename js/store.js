@@ -574,6 +574,7 @@ const PRIV_MODULES = [
   { key:'engins',      label:'Engins' },
   { key:'maintenance', label:'Maintenance' },
   { key:'rapports',    label:'Rapports' },
+  { key:'bulletins',   label:'Bulletins de salaire' },
   { key:'parametres',  label:'Paramètres' },
   { key:'utilisateurs',label:'Utilisateurs & privilèges' }
 ];
@@ -614,7 +615,7 @@ const ROLES = {
       'factures:vue','factures:edit','factures:suppr',
       'engins:vue','engins:edit','engins:suppr',
       'maintenance:vue','maintenance:edit','maintenance:suppr',
-      'rapports:vue','parametres:vue','parametres:edit',
+      'rapports:vue','bulletins:vue','bulletins:edit','parametres:vue','parametres:edit',
       'utilisateurs:vue','utilisateurs:edit',
       'global:export','global:sync')
   },
@@ -625,7 +626,7 @@ const ROLES = {
     privs: () => privs(
       'travaux:vue','travaux:edit','travaux:suppr',
       'terrain:vue','terrain:edit','terrain:suppr',
-      'engins:vue','maintenance:vue','dashboard:vue',
+      'engins:vue','maintenance:vue','dashboard:vue','bulletins:vue',
       'global:sync')
   },
   lecture: {
@@ -633,7 +634,7 @@ const ROLES = {
     desc: 'Voit les tableaux de bord, travaux, charges et rapports, sans rien modifier.',
     privs: () => privs(
       'dashboard:vue','travaux:vue','charges:vue','factures:vue',
-      'engins:vue','maintenance:vue','rapports:vue',
+      'engins:vue','maintenance:vue','rapports:vue','bulletins:vue',
       'global:export')
   },
   perso: {

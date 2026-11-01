@@ -125,6 +125,7 @@ function renderView(v){
     case 'engins': renderEngins(); break;
     case 'maintenance': renderMaintenance(); break;
     case 'rapports': renderRapports(); break;
+    case 'bulletins': renderBulletins(); break;
     case 'parametres': renderParametres(); break;
     case 'utilisateurs': renderUtilisateurs(); break;
   }
@@ -1976,6 +1977,7 @@ function init(){
   initEngins();
   initMaintenance();
   initConducteurs();
+  initBulletins();
   initParametres();
   initUtilisateurs();
   startSyncLoop();

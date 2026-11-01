@@ -326,3 +326,56 @@ th.ctr,td.ctr{text-align:center}
   .fac-meta{text-align:left}
   .terrain-montant{font-size:28px}
 }
+
+/* ============================================================
+   MODULE BULLETINS DE SALAIRE
+   ============================================================ */
+
+/* Aperçu en-tête employé */
+.bul-preview-header{
+  display:flex;flex-direction:column;gap:4px;
+  padding:14px 16px;background:var(--panel2);border-radius:12px;margin-bottom:14px;
+  border-left:4px solid var(--primary);
+}
+.bul-emp-name{font-size:18px;font-weight:700}
+.bul-emp-role{font-size:12.5px}
+.bul-periode{font-size:12px;margin-top:2px}
+
+/* KPIs mini du bulletin */
+.bul-kpis{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
+  gap:10px;margin-bottom:14px;
+}
+.bul-kpi{
+  background:var(--panel2);border:1px solid var(--border);border-radius:12px;
+  padding:10px 12px;
+}
+.bul-kpi.accent-green{border-left:4px solid var(--green)}
+.bk-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px}
+.bk-val{font-size:18px;font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums}
+
+/* Récapitulatif totaux dans l'aperçu */
+.bul-recap{
+  border:2px solid var(--border);border-radius:12px;overflow:hidden;margin-top:14px;
+}
+.bul-recap-row{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:9px 14px;border-bottom:1px solid var(--border);font-size:13.5px;
+}
+.bul-recap-row:last-of-type{border-bottom:none}
+.bul-recap-row.bul-net{
+  background:var(--primary);color:#fff;font-size:15px;font-weight:700;
+}
+.bul-lettres{
+  padding:10px 14px;background:rgba(79,140,255,.08);
+  font-size:12px;color:var(--muted);font-style:italic;
+  border-top:1px solid var(--border);
+}
+
+/* Tableau récapitulatif de tous les bulletins */
+#tableBulletins tfoot td{
+  font-weight:700;border-top:2px solid var(--border);background:var(--panel2);
+}
+
+/* Alternance de lignes (aperçu tableau) */
+.tr-alt{background:rgba(79,140,255,.04)}
