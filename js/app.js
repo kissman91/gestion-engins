@@ -1,4 +1,4 @@
-/* ============ app.js — UI, navigation, formulaires, rendu ============ */
+﻿/* ============ app.js — UI, navigation, formulaires, rendu ============ */
 
 /* ---------- Helpers DOM ---------- */
 const $ = sel => document.querySelector(sel);
@@ -60,21 +60,159 @@ function triggerCloudPush(){
   }
 }
 
-/* ---------- CSV ---------- */
-function exportCSV(filename, headers, rows){
-  const esc = v => {
-    const s = String(v === null || v === undefined ? '' : v);
-    return /[";\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
-  };
-  const csv = [headers.map(esc).join(';')]
-    .concat(rows.map(r => r.map(esc).join(';')))
-    .join('\r\n');
-  const blob = new Blob(['\uFEFF' + csv], { type:'text/csv;charset=utf-8' });
+/* ---------- EXCEL (.XLS) & WORD (.DOC) BIEN STRUCTURÉS ---------- */
+function exportXLS(filename, title, headers, rows, options = {}) {
+  const safeFilename = filename.endsWith('.xls') ? filename : filename.replace(/\.[^.]+$/, '') + '.xls';
+  const entNom = (typeof DB !== 'undefined' && DB.settings && DB.settings.nom) ? DB.settings.nom : 'Mon Entreprise';
+  const devise = (typeof DB !== 'undefined' && DB.settings && DB.settings.devise) ? DB.settings.devise : 'FCFA';
+  const dateExport = new Date().toLocaleString('fr-FR');
+  const sheetName = (options.sheetName || title || 'Données').slice(0, 31).replace(/[:\\\/\?\*\[\]]/g, ' ');
+  const colSpan = Math.max(1, (headers || []).length);
+
+  const ths = (headers || []).map(h => {
+    const isNum = typeof h === 'object' ? h.isNum : false;
+    const label = typeof h === 'object' ? h.label : h;
+    return `<th class="${isNum ? 'num' : ''}">${escapeHTML(label)}</th>`;
+  }).join('');
+
+  const trs = (rows || []).map((r, idx) => {
+    const rowClass = idx % 2 === 1 ? ' class="alt"' : '';
+    const tds = (r || []).map(val => {
+      const isNum = typeof val === 'number' || (typeof val === 'string' && /^-?\d+(\.\d+)?$/.test(val.trim()));
+      const numClass = isNum ? 'num' : 'text';
+      const formatted = val === null || val === undefined ? '' : escapeHTML(String(val));
+      return `<td class="${numClass}">${formatted}</td>`;
+    }).join('');
+    return `<tr${rowClass}>${tds}</tr>`;
+  }).join('\n');
+
+  let footHTML = '';
+  if (options.foot && Array.isArray(options.foot)) {
+    const footTds = options.foot.map(f => {
+      const isNum = typeof f === 'object' ? f.isNum : false;
+      const text = typeof f === 'object' ? f.text : f;
+      const colspan = (typeof f === 'object' && f.colspan) ? ` colspan="${f.colspan}"` : '';
+      return `<td${colspan} class="${isNum ? 'num' : ''}"><b>${escapeHTML(String(text))}</b></td>`;
+    }).join('');
+    footHTML = `<tfoot><tr>${footTds}</tr></tfoot>`;
+  }
+
+  const html = `<!DOCTYPE html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+      xmlns:x="urn:schemas-microsoft-com:office:excel"
+      xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="utf-8">
+<!--[if gte mso 9]>
+<xml>
+ <x:ExcelWorkbook>
+  <x:ExcelWorksheets>
+   <x:ExcelWorksheet>
+    <x:Name>${escapeHTML(sheetName)}</x:Name>
+    <x:WorksheetOptions>
+     <x:DisplayGridlines/>
+     <x:Print><x:ValidPrinterInfo/></x:Print>
+    </x:WorksheetOptions>
+   </x:ExcelWorksheet>
+  </x:ExcelWorksheets>
+ </x:ExcelWorkbook>
+</xml>
+<![endif]-->
+<style>
+  body { font-family: "Segoe UI", Calibri, Arial, sans-serif; font-size: 11pt; color: #1a2340; }
+  table { border-collapse: collapse; width: 100%; }
+  .title-brand { font-size: 15pt; font-weight: bold; color: #4f8cff; padding-bottom: 3px; }
+  .title-doc { font-size: 12.5pt; font-weight: bold; color: #1a2135; padding-bottom: 2px; }
+  .meta { font-size: 9.5pt; color: #666666; font-style: italic; padding-bottom: 12px; }
+  th { background-color: #1a2135; color: #ffffff; font-weight: bold; border: 1px solid #1a2135; padding: 8px 10px; font-size: 10pt; text-align: left; }
+  th.num { text-align: right; }
+  td { border: 1px solid #d0daf5; padding: 6px 9px; font-size: 10pt; vertical-align: middle; }
+  td.num { text-align: right; mso-number-format: "\\#\\,\\#\\#0\\.00"; }
+  td.text { text-align: left; mso-number-format: "\\@"; }
+  .alt { background-color: #f7f9ff; }
+  tfoot td { background-color: #eef4ff; font-weight: bold; border-top: 2px solid #1a2135; border-bottom: 2px solid #1a2135; padding: 7px 9px; }
+</style>
+</head>
+<body>
+<table>
+  <tr><td colspan="${colSpan}" class="title-brand">${escapeHTML(entNom)}</td></tr>
+  <tr><td colspan="${colSpan}" class="title-doc">${escapeHTML(title || 'Export des données')}</td></tr>
+  <tr><td colspan="${colSpan}" class="meta">Exporté le ${escapeHTML(dateExport)} · Devise : ${escapeHTML(devise)}</td></tr>
+  <tr><td colspan="${colSpan}" style="height:8px;border:none;"></td></tr>
+  <thead>
+    <tr>${ths}</tr>
+  </thead>
+  <tbody>
+    ${trs}
+  </tbody>
+  ${footHTML}
+</table>
+</body>
+</html>`;
+
+  const blob = new Blob(['\uFEFF' + html], { type: 'application/vnd.ms-excel;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = filename;
+  a.download = safeFilename;
   a.click();
   URL.revokeObjectURL(a.href);
+}
+
+function exportDOC(filename, title, contentHTML) {
+  const safeFilename = filename.endsWith('.doc') ? filename : filename.replace(/\.[^.]+$/, '') + '.doc';
+  const entNom = (typeof DB !== 'undefined' && DB.settings && DB.settings.nom) ? DB.settings.nom : 'Mon Entreprise';
+  const dateExport = new Date().toLocaleString('fr-FR');
+
+  const html = `<!DOCTYPE html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+      xmlns:w="urn:schemas-microsoft-com:office:word"
+      xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="utf-8">
+<!--[if gte mso 9]>
+<xml>
+ <w:WordDocument>
+  <w:View>Print</w:View>
+  <w:Zoom>100</w:Zoom>
+  <w:DoNotOptimizeForBrowser/>
+ </w:WordDocument>
+</xml>
+<![endif]-->
+<style>
+  @page { size: A4; margin: 2cm 2cm 2cm 2cm; mso-page-orientation: portrait; }
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 11pt; color: #1a2340; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+  th { background-color: #1a2135; color: #ffffff; font-weight: bold; border: 1px solid #1a2135; padding: 7px 10px; font-size: 10pt; }
+  td { border: 1px solid #d0daf5; padding: 6px 9px; font-size: 10pt; }
+  .num { text-align: right; }
+  .header-box { border-bottom: 2px solid #1a2135; padding-bottom: 10px; margin-bottom: 15px; }
+  .company { font-size: 16pt; font-weight: bold; color: #1a2135; }
+  .doc-title { font-size: 14pt; font-weight: bold; color: #4f8cff; margin-top: 5px; }
+  .meta { font-size: 9pt; color: #666; margin-top: 3px; }
+</style>
+</head>
+<body>
+<div class="header-box">
+  <div class="company">${escapeHTML(entNom)}</div>
+  <div class="doc-title">${escapeHTML(title || '')}</div>
+  <div class="meta">Édité le ${escapeHTML(dateExport)}</div>
+</div>
+${contentHTML}
+</body>
+</html>`;
+
+  const blob = new Blob(['\uFEFF' + html], { type: 'application/msword;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = safeFilename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* Rétro-compatibilité : exportCSV redirige automatiquement vers exportXLS */
+function exportCSV(filename, headers, rows) {
+  const xlsName = (filename || 'export.xls').replace(/\.csv$/i, '.xls');
+  exportXLS(xlsName, 'Export de données', headers, rows);
 }
 
 /* ============================================================
@@ -660,7 +798,12 @@ function initTravaux(){
       const a = activiteById(t.activiteId);
       return [t.date, a?a.libelle:'', a?a.unite:'', t.qte, t.prixUnitaire, trvMontant(t), enginNom(t.enginId), t.conducteur||'', t.client||'', t.notes||''];
     });
-    exportCSV('travaux.csv', ['Date','Activité','Unité','Quantité','Prix unitaire','Montant','Engin','Conducteur','Client','Notes'], rows);
+    const totalMontant = rows.reduce((s, r) => s + (Number(r[5]) || 0), 0);
+    exportXLS('travaux.xls', 'Historique des Travaux Réalisés',
+      ['Date','Activité','Unité','Quantité','Prix unitaire','Montant','Engin','Conducteur','Client','Notes'],
+      rows,
+      { foot: [{ colspan: 5, text: 'Total (' + rows.length + ' travaux)' }, { isNum: true, text: totalMontant }, '', '', '', ''] }
+    );
   });
 }
 
@@ -1202,7 +1345,12 @@ function initCharges(){
     if(!requirePriv('global:export')) return;
     const rows = rowsPour('charges').slice().sort((a,b) => a.date < b.date ? 1 : -1).map(c =>
       [c.date, CATEGORIES[c.categorie].label, chargeDetail(c).replace(/<[^>]+>/g,''), c.enginId?enginNom(c.enginId):'Global', c.montant, c.km||'', c.litres||'', c.notes||'']);
-    exportCSV('charges.csv', ['Date','Catégorie','Détail','Engin','Montant','Km','Litres','Notes'], rows);
+    const totalMontant = rows.reduce((s, r) => s + (Number(r[4]) || 0), 0);
+    exportXLS('charges.xls', 'Historique des Charges & Dépenses',
+      ['Date','Catégorie','Détail','Engin','Montant','Km','Litres','Notes'],
+      rows,
+      { foot: [{ colspan: 4, text: 'Total (' + rows.length + ' charges)' }, { isNum: true, text: totalMontant }, '', '', ''] }
+    );
   });
 }
 
@@ -1552,9 +1700,11 @@ function renderConducteurs(){
   </tr>` : '';
 
   $('#repExportConducteurs').onclick = () => {
-    exportCSV('conducteurs.csv',
+    exportXLS('conducteurs.xls', 'Comparatif par Conducteur',
       ['Conducteur','Rôle','Travaux','Transferts','Ouvertures','CA généré','Salaire','Reste'],
-      rows.map(r => [r.nom, roleLabel(r), r.nb, r.transferts, r.ouvertures, r.ca, r.salaire, r.reste]));
+      rows.map(r => [r.nom, roleLabel(r), r.nb, r.transferts, r.ouvertures, r.ca, r.salaire, r.reste]),
+      { foot: ['Total', '', rows.reduce((s,r)=>s+r.nb,0), rows.reduce((s,r)=>s+r.transferts,0), rows.reduce((s,r)=>s+r.ouvertures,0), tot.ca, tot.sal, tot.rest] }
+    );
   };
 }
 
@@ -1628,20 +1778,22 @@ function renderRapports(){
   renderConducteurs();
 
   $('#repExportMensuel').onclick = () => {
-    exportCSV('rapport_mensuel.csv',
-      ['Mois','CA','Charges','Benefice','Marge %','Carburant L','L/100km','Voyages','Ouvertures'],
-      rowsM.map(({m,k}) => [m, k.ca, k.depenses, k.benefice, k.marge===null?'':k.marge.toFixed(1), k.litres, k.conso100===null?'':k.conso100.toFixed(1), k.voyages, k.ouvertures]));
+    exportXLS('rapport_mensuel.xls', 'Synthèse Mensuelle (CA, Charges & Bénéfice)',
+      ['Mois','CA','Charges','Bénéfice','Marge %','Carburant (L)','L/100km','Voyages','Ouvertures'],
+      rowsM.map(({m,k}) => [m, k.ca, k.depenses, k.benefice, k.marge===null?'':k.marge.toFixed(1), k.litres, k.conso100===null?'':k.conso100.toFixed(1), k.voyages, k.ouvertures])
+    );
   };
   $('#repExportEngins').onclick = () => {
-    exportCSV('bilan_engins.csv',
-      ['Engin','Voyages','Ouvertures','CA','Carburant','Maintenance','Rémunération','Autres charges','Total charges','Benefice','Marge %','Km','L/100km'],
+    exportXLS('bilan_engins.xls', 'Bilan Complet par Engin',
+      ['Engin','Voyages','Ouvertures','CA','Carburant','Maintenance','Rémunération','Autres charges','Total charges','Bénéfice','Marge %','Km','L/100km'],
       DB.engins.map(e => {
         const k = computeKPIs(range, e.id);
         const autres = k.parCat.autre + (k.parCat.salaire - k.coutConducteur);
         return [e.nom, k.voyages, k.ouvertures, k.ca, k.parCat.carburant, k.parCat.maintenance,
                 k.coutConducteur, autres, k.depenses, k.benefice,
                 k.marge===null?'':k.marge.toFixed(1), k.km, k.conso100===null?'':k.conso100.toFixed(1)];
-      }));
+      })
+    );
   };
 }
 

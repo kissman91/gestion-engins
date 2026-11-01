@@ -1,4 +1,4 @@
-/* ============ store.js — données, persistance, indicateurs ============ */
+﻿/* ============ store.js — données, persistance, indicateurs ============ */
 
 const DB_KEY = 'gestion_engins_db_v1';
 
@@ -584,7 +584,7 @@ const PRIV_ACTIONS = [
   { key:'suppr', label:'Supprimer' }
 ];
 const PRIV_GLOBAL = [
-  { key:'export', label:'Exporter les données (CSV / sauvegarde)' },
+  { key:'export', label:'Exporter les données (Excel / Word / sauvegarde)' },
   { key:'sync',   label:'Synchronisation cloud (Supabase)' }
 ];
 

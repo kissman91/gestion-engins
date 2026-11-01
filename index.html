@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
@@ -158,7 +158,7 @@
         <div class="filters">
           <input type="month" id="trvFilterMonth">
           <select id="trvFilterEngin"><option value="">Tous les engins</option></select>
-          <button class="btn btn-ghost btn-sm" id="trvExport" data-priv="global:export">⬇ CSV</button>
+          <button class="btn btn-ghost btn-sm" id="trvExport" data-priv="global:export">⬇ Excel (.xls)</button>
         </div>
       </div>
       <div class="table-wrap">
@@ -251,7 +251,7 @@
             <option value="autre">Autres</option>
           </select>
           <select id="chFilterEngin"><option value="">Tous les engins</option></select>
-          <button class="btn btn-ghost btn-sm" id="chExport" data-priv="global:export">⬇ CSV</button>
+          <button class="btn btn-ghost btn-sm" id="chExport" data-priv="global:export">⬇ Excel (.xls)</button>
         </div>
       </div>
       <div class="table-wrap">
@@ -387,8 +387,8 @@
       <h1>Rapports</h1>
       <div class="filters">
         <input type="month" id="repMonth">
-        <button class="btn btn-ghost btn-sm" id="repExportMensuel" data-priv="global:export">⬇ CSV mensuel</button>
-        <button class="btn btn-ghost btn-sm" id="repExportEngins" data-priv="global:export">⬇ CSV par engin</button>
+        <button class="btn btn-ghost btn-sm" id="repExportMensuel" data-priv="global:export">⬇ Excel mensuel (.xls)</button>
+        <button class="btn btn-ghost btn-sm" id="repExportEngins" data-priv="global:export">⬇ Excel par engin (.xls)</button>
       </div>
     </div>
 
@@ -429,7 +429,7 @@
         <h2>Comparatif par conducteur</h2>
         <div class="filters">
           <select id="condTaux" title="Rémunération par opération"></select>
-          <button class="btn btn-ghost btn-sm" id="repExportConducteurs" data-priv="global:export">⬇ CSV conducteurs</button>
+          <button class="btn btn-ghost btn-sm" id="repExportConducteurs" data-priv="global:export">⬇ Excel conducteurs (.xls)</button>
         </div>
       </div>
       <p class="muted" style="margin:4px 0 10px">Salaire = (nombre de transferts + nombre d'ouvertures) × tarif par opération — période sélectionnée ci-dessous.</p>
@@ -592,7 +592,7 @@
     <div class="view-head">
       <h1>📄 Bulletins de salaire</h1>
       <div class="filters">
-        <button class="btn btn-ghost btn-sm" id="bulBtnCsv" data-priv="global:export">⬇ CSV tous les employés</button>
+        <button class="btn btn-ghost btn-sm" id="bulBtnCsv" data-priv="global:export">⬇ Excel récapitulatif (.xls)</button>
       </div>
     </div>
 
@@ -611,6 +611,7 @@
         <div class="form-actions">
           <button class="btn btn-ghost" id="bulBtnApercu">🔄 Actualiser l'aperçu</button>
           <button class="btn btn-primary" id="bulBtnImprimer" disabled data-priv="rapports:vue">🖨 Imprimer / PDF</button>
+          <button class="btn btn-ghost" id="bulBtnWord" disabled data-priv="rapports:vue">📄 Télécharger Word (.doc)</button>
         </div>
         <p class="muted" style="margin-top:14px;font-size:12px;">
           Le salaire est calculé automatiquement à partir des travaux enregistrés pour cet employé

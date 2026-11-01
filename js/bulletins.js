@@ -1,4 +1,4 @@
-/* ============================================================
+﻿/* ============================================================
    bulletins.js — Module Bulletin de Salaire
    Génère et imprime un bulletin de paie individuel par employé
    ============================================================ */
@@ -445,6 +445,143 @@ function imprimerBulletin(b) {
   };
 }
 
+/**
+ * Exporte le bulletin de salaire au format Word (.doc) structuré.
+ * @param {Object} b résultat de calculerBulletin()
+ */
+function telechargerBulletinWord(b) {
+  if (!b) return;
+  const nomEmp = (b.employe && b.employe.nom) ? b.employe.nom : 'Employe';
+  const roleEmp = (b.employe && b.employe.role === 'conducteur') ? 'Conducteur' :
+                  (b.employe && b.employe.role === 'apprenti')   ? 'Apprenti'   : 'Personnel';
+  const moisDebut = frDate(b.periode.debut);
+  const moisFin   = frDate(b.periode.fin);
+  const periodeLabel = moisDebut === moisFin ? moisDebut : `Du ${moisDebut} au ${moisFin}`;
+  const filename = `bulletin_${nomEmp.replace(/\s+/g, '_')}_${b.periode.debut.slice(0,7).replace('-','_')}.doc`;
+
+  const lignesAct = b.parActivite.length ? b.parActivite.map(a => `
+    <tr>
+      <td style="padding:6px 10px; border:1px solid #d0daf5;">${escapeHTML(a.libelle)}</td>
+      <td style="padding:6px 10px; border:1px solid #d0daf5; text-align:right;">${fmtNum(a.qte)}</td>
+      <td style="padding:6px 10px; border:1px solid #d0daf5; text-align:center;">${escapeHTML(a.unite)}</td>
+      <td style="padding:6px 10px; border:1px solid #d0daf5; text-align:right;">${money(b.taux)}</td>
+      <td style="padding:6px 10px; border:1px solid #d0daf5; text-align:right; font-weight:bold;">${money(Math.round(a.qte * b.taux * 100) / 100)}</td>
+    </tr>`).join('') : '<tr><td colspan="5" style="padding:8px; border:1px solid #d0daf5; color:#777; font-style:italic;">Aucun travail enregistré</td></tr>';
+
+  const lignesSuppl = b.lignesSuppl.length ? b.lignesSuppl.map(l => `
+    <tr>
+      <td style="padding:6px 10px; border:1px solid #d0daf5;">${escapeHTML(l.libelle)}</td>
+      <td style="padding:6px 10px; border:1px solid #d0daf5; text-align:center;" colspan="3">${frDate(l.date)}</td>
+      <td style="padding:6px 10px; border:1px solid #d0daf5; text-align:right; font-weight:bold; color:${l.montant >= 0 ? '#1a9e6e' : '#d63645'};">${l.montant >= 0 ? '+' : ''}${money(l.montant)}</td>
+    </tr>`).join('') : '';
+
+  const content = `
+  <table style="width:100%; border:none; margin-bottom:14px; border-bottom:3px solid #1a2340; padding-bottom:8px;">
+    <tr>
+      <td style="border:none; vertical-align:top;">
+        <div style="font-size:16pt; font-weight:bold; color:#1a2340;">${escapeHTML(b.entreprise)}</div>
+        <div style="font-size:9.5pt; color:#666;">Gestion des engins — Transferts &amp; Débardage</div>
+      </td>
+      <td style="border:none; text-align:right; vertical-align:top;">
+        <div style="font-size:18pt; font-weight:bold; color:#4f8cff;">BULLETIN DE SALAIRE</div>
+        <div style="font-size:10pt; font-weight:bold; color:#1a2340; margin-top:4px;">${escapeHTML(periodeLabel)}</div>
+      </td>
+    </tr>
+  </table>
+
+  <table style="width:100%; border:1px solid #d0daf5; background:#f6f8fc; margin-bottom:16px;">
+    <tr>
+      <td style="border:none; padding:8px 12px;"><b>Nom :</b> ${escapeHTML(nomEmp)}</td>
+      <td style="border:none; padding:8px 12px;"><b>Fonction :</b> ${escapeHTML(roleEmp)}</td>
+      <td style="border:none; padding:8px 12px;"><b>Taux / opération :</b> ${money(b.taux)}</td>
+    </tr>
+  </table>
+
+  <h3 style="font-size:11.5pt; color:#1a2340; margin:14px 0 6px;">1. Activités &amp; Opérations Réalisées</h3>
+  <table style="width:100%; border-collapse:collapse; margin-bottom:12px;">
+    <thead>
+      <tr style="background:#1a2340; color:#ffffff;">
+        <th style="padding:7px 10px; border:1px solid #1a2340; text-align:left;">Activité</th>
+        <th style="padding:7px 10px; border:1px solid #1a2340; text-align:right;">Quantité</th>
+        <th style="padding:7px 10px; border:1px solid #1a2340; text-align:center;">Unité</th>
+        <th style="padding:7px 10px; border:1px solid #1a2340; text-align:right;">Taux</th>
+        <th style="padding:7px 10px; border:1px solid #1a2340; text-align:right;">Montant</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${lignesAct}
+      <tr style="background:#f0f4fa; font-weight:bold;">
+        <td colspan="4" style="padding:6px 10px; border:1px solid #d0daf5;">Total opérations rémunérées</td>
+        <td style="padding:6px 10px; border:1px solid #d0daf5; text-align:right;">${fmtNum(b.nbOps)} op.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  ${b.lignesSuppl.length ? `
+  <h3 style="font-size:11.5pt; color:#1a2340; margin:14px 0 6px;">2. Primes, Avances &amp; Retenues</h3>
+  <table style="width:100%; border-collapse:collapse; margin-bottom:12px;">
+    <thead>
+      <tr style="background:#1a2340; color:#ffffff;">
+        <th style="padding:7px 10px; border:1px solid #1a2340; text-align:left;">Libellé</th>
+        <th style="padding:7px 10px; border:1px solid #1a2340; text-align:center;" colspan="3">Date</th>
+        <th style="padding:7px 10px; border:1px solid #1a2340; text-align:right;">Montant</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${lignesSuppl}
+    </tbody>
+  </table>` : ''}
+
+  <h3 style="font-size:11.5pt; color:#1a2340; margin:14px 0 6px;">3. Récapitulatif Financier</h3>
+  <table style="width:100%; border-collapse:collapse; border:2px solid #1a2340; margin-bottom:14px;">
+    <tr>
+      <td style="padding:7px 10px; border:1px solid #e0e8f5;"><b>CA généré par le travailleur :</b></td>
+      <td style="padding:7px 10px; border:1px solid #e0e8f5; text-align:right;"><b>${money(b.caGenere)}</b></td>
+    </tr>
+    <tr>
+      <td style="padding:7px 10px; border:1px solid #e0e8f5;">Salaire brut (${fmtNum(b.nbOps)} op. × ${money(b.taux)}) :</td>
+      <td style="padding:7px 10px; border:1px solid #e0e8f5; text-align:right;">${money(b.salaireBrut)}</td>
+    </tr>
+    ${b.primes > 0 ? `
+    <tr>
+      <td style="padding:7px 10px; border:1px solid #e0e8f5; color:#1a9e6e;">+ Primes &amp; bonus :</td>
+      <td style="padding:7px 10px; border:1px solid #e0e8f5; text-align:right; font-weight:bold; color:#1a9e6e;">+${money(b.primes)}</td>
+    </tr>` : ''}
+    ${b.retenues > 0 ? `
+    <tr>
+      <td style="padding:7px 10px; border:1px solid #e0e8f5; color:#d63645;">- Retenues &amp; avances :</td>
+      <td style="padding:7px 10px; border:1px solid #e0e8f5; text-align:right; font-weight:bold; color:#d63645;">-${money(b.retenues)}</td>
+    </tr>` : ''}
+    <tr style="background:#1a2340; color:#ffffff; font-size:13pt; font-weight:bold;">
+      <td style="padding:10px;">NET À PAYER :</td>
+      <td style="padding:10px; text-align:right;">${money(b.salaireNet)}</td>
+    </tr>
+  </table>
+
+  <div style="padding:8px 12px; background:#f0f6ff; border-left:4px solid #4f8cff; font-size:10.5pt; margin-bottom:30px;">
+    <b>Montant en toutes lettres :</b> ${escapeHTML(montantEnLettres(b.salaireNet))}
+  </div>
+
+  <table style="width:100%; border:none; margin-top:25px;">
+    <tr>
+      <td style="border:none; text-align:center; width:33%;">
+        <div style="border-bottom:1px solid #1a2340; height:45px; margin-bottom:5px;"></div>
+        <div style="font-size:9pt; text-transform:uppercase; color:#666;">Le Directeur</div>
+      </td>
+      <td style="border:none; width:33%;"></td>
+      <td style="border:none; text-align:center; width:33%;">
+        <div style="border-bottom:1px solid #1a2340; height:45px; margin-bottom:5px;"></div>
+        <div style="font-size:9pt; text-transform:uppercase; color:#666;">Signature Travailleur<br>(Lu et approuvé)</div>
+      </td>
+    </tr>
+  </table>
+  `;
+
+  exportDOC(filename, 'Bulletin de salaire — ' + nomEmp, content);
+}
+
+
+
 /* ---------------------------------------------------------------
    VUE BULLETINS — UI complète
    --------------------------------------------------------------- */
@@ -575,6 +712,8 @@ function _updateBulletinPreview() {
 function _setBulletinActions(enabled) {
   const btn = $('#bulBtnImprimer');
   if (btn) btn.disabled = !enabled;
+  const btnDoc = $('#bulBtnWord');
+  if (btnDoc) btnDoc.disabled = !enabled;
 }
 
 /**
@@ -674,25 +813,42 @@ function initBulletins() {
     });
   }
 
-  /* Export CSV de tous les bulletins du mois */
+  const btnDoc = $('#bulBtnWord');
+  if (btnDoc) {
+    btnDoc.addEventListener('click', () => {
+      if (!requirePriv('rapports:vue')) return;
+      const b = _buildCurrentBulletin();
+      if (!b) { toast('Choisissez d\'abord un employé', true); return; }
+      telechargerBulletinWord(b);
+    });
+  }
+
+  /* Export Excel (.xls) de tous les bulletins du mois */
   const btnCsv = $('#bulBtnCsv');
   if (btnCsv) {
     btnCsv.addEventListener('click', () => {
       if (!requirePriv('global:export')) return;
       const moisStr  = mois ? mois.value : '';
       const [debut, fin] = _parseMoisRange(moisStr);
+      let totTransf = 0, totOuv = 0, totOps = 0, totBrut = 0, totPrimes = 0, totRet = 0, totNet = 0;
       const rows = DB.employes.map(emp => {
         const b = calculerBulletin(emp.id, debut, fin);
         if (!b) return null;
-        return [b.employe.nom, b.employe.role, frDate(debut), frDate(fin),
+        totTransf += b.nbTransferts; totOuv += b.nbOuvertures; totOps += b.nbOps;
+        totBrut += b.salaireBrut; totPrimes += b.primes; totRet += b.retenues; totNet += b.salaireNet;
+        const roleLabel = emp.role === 'conducteur' ? 'Conducteur' :
+                          emp.role === 'apprenti'   ? 'Apprenti'   : 'Autre';
+        return [b.employe.nom, roleLabel, frDate(debut), frDate(fin),
                 b.nbTransferts, b.nbOuvertures, b.nbOps,
                 b.salaireBrut, b.primes, b.retenues, b.salaireNet];
       }).filter(Boolean);
-      exportCSV(
-        `bulletins_${(moisStr || 'periode').replace('-', '_')}.csv`,
+      exportXLS(
+        `bulletins_${(moisStr || 'periode').replace('-', '_')}.xls`,
+        `Récapitulatif des Bulletins de Salaire (${moisStr || 'Période'})`,
         ['Employé', 'Rôle', 'Début', 'Fin', 'Transferts', 'Ouvertures', 'Nb ops',
          'Salaire brut', 'Primes', 'Retenues', 'Net à payer'],
-        rows
+        rows,
+        { foot: [{ colspan: 4, text: 'Total (' + rows.length + ' employés)' }, totTransf, totOuv, totOps, totBrut, totPrimes, totRet, totNet] }
       );
     });
   }
