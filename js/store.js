@@ -212,11 +212,15 @@ function filterCharges(range, enginId){
 }
 
 /* ---------- Consommation : km & litres ---------- */
-/* km parcourus sur une période = dernier compteur connu avant/après la période */
+/* km parcourus sur une période = dernier compteur connu avant/après la période (charges + travaux) */
 function readingsFor(enginId){
-  return rowsPour('charges')
+  const fromCharges = rowsPour('charges')
     .filter(c => c.enginId === enginId && c.km !== undefined && c.km !== null && c.km !== '' && !isNaN(c.km))
-    .map(c => ({ date: c.date, km: Number(c.km) }))
+    .map(c => ({ date: c.date, km: Number(c.km) }));
+  const fromTravaux = rowsPour('travaux')
+    .filter(t => t.enginId === enginId && t.km !== undefined && t.km !== null && t.km !== '' && !isNaN(t.km))
+    .map(t => ({ date: t.date, km: Number(t.km) }));
+  return fromCharges.concat(fromTravaux)
     .sort((a,b) => a.date !== b.date ? (a.date < b.date ? -1 : 1) : a.km - b.km);
 }
 
@@ -254,14 +258,19 @@ function kmParcours(range, enginId){
 function kmTotalDepuis(enginId){
   const e = enginById(enginId);
   if(!e) return 0;
-  const kms = rowsPour('charges')
+  const kmsCharges = rowsPour('charges')
     .filter(c => c.enginId === enginId && c.km !== undefined && c.km !== null && c.km !== '' && !isNaN(c.km))
     .map(c => Number(c.km));
-  if(!kms.length) return 0;
-  const depart = Number(e.kmDepart) > 0 ? Number(e.kmDepart) : Math.min(...kms);
-  const max = Math.max(...kms);
+  const kmsTravaux = rowsPour('travaux')
+    .filter(t => t.enginId === enginId && t.km !== undefined && t.km !== null && t.km !== '' && !isNaN(t.km))
+    .map(t => Number(t.km));
+  const allKms = kmsCharges.concat(kmsTravaux);
+  if(!allKms.length) return 0;
+  const depart = Number(e.kmDepart) > 0 ? Number(e.kmDepart) : Math.min(...allKms);
+  const max = Math.max(...allKms);
   return Math.max(0, max - depart);
 }
+
 
 /* ---------- Rémunération conducteur (rattachée à l'engin) ---------- */
 /* Découpe un travail en opérations payantes par type d'activité (voyage / ouverture) */
@@ -341,16 +350,22 @@ function computeKPIs(range, enginId){
   };
 }
 
-/* ---------- Maintenance : échéances ---------- */
+/* ---------- Maintenance : échéances & Vidanges ---------- */
 function echeancesMaint(){
   const out = [];
   DB.engins.forEach(e => {
     DB.preventions.forEach(p => {
       if(!p.km && !p.mois) return;
-      // dernière intervention du même type (libellé proche)
+      // dernière intervention du même type (libellé exact ou proche)
+      const pLib = (p.libelle || '').toLowerCase();
       const intervs = rowsPour('charges')
-        .filter(c => c.categorie === 'maintenance' && c.enginId === e.id && c.typeMaint === p.libelle)
-        .sort((a,b) => (a.date < b.date ? 1 : -1));
+        .filter(c => c.categorie === 'maintenance' && c.enginId === e.id && (
+          c.typeMaint === p.libelle ||
+          (c.typeMaint && c.typeMaint.toLowerCase() === pLib) ||
+          (c.libelle && c.libelle.toLowerCase().includes(pLib)) ||
+          (pLib.includes('vidange') && ((c.typeMaint && c.typeMaint.toLowerCase().includes('vidange')) || (c.libelle && c.libelle.toLowerCase().includes('vidange'))))
+        ))
+        .sort((a,b) => (b.date !== a.date ? (b.date < a.date ? -1 : 1) : (Number(b.km)||0) - (Number(a.km)||0)));
       const last = intervs[0] || null;
       const kmActuel = currentKm(e);
       let nextDate = null, nextKm = null, etat = 'ok', jours = null, kmRestant = null;
@@ -394,13 +409,84 @@ function echeancesMaint(){
   return out;
 }
 
+/* Compteur actuel d'un engin (max entre compteur de départ, saisies travaux et charges) */
 function currentKm(e){
-  const kms = rowsPour('charges')
-    .filter(c => c.enginId === e.id && c.km !== undefined && c.km !== null && c.km !== '' && !isNaN(c.km))
+  const enginId = typeof e === 'object' && e ? e.id : e;
+  const enginObj = typeof e === 'object' && e ? e : enginById(enginId);
+  const kmsCharges = rowsPour('charges')
+    .filter(c => c.enginId === enginId && c.km !== undefined && c.km !== null && c.km !== '' && !isNaN(c.km))
     .map(c => Number(c.km));
-  if(!kms.length) return Number(e.kmDepart)||0;
-  return Math.max(...kms, Number(e.kmDepart)||0);
+  const kmsTravaux = rowsPour('travaux')
+    .filter(t => t.enginId === enginId && t.km !== undefined && t.km !== null && t.km !== '' && !isNaN(t.km))
+    .map(t => Number(t.km));
+  const allKms = kmsCharges.concat(kmsTravaux);
+  const depart = enginObj && !isNaN(enginObj.kmDepart) ? Number(enginObj.kmDepart) : 0;
+  if(!allKms.length) return depart;
+  return Math.max(...allKms, depart);
 }
+
+/* Calcul spécifique de la prochaine vidange d'un engin avec état d'alerte */
+function prochaineVidangeEngin(enginId){
+  const e = typeof enginId === 'object' && enginId ? enginId : enginById(enginId);
+  if(!e) return null;
+
+  let prevVidange = (DB.preventions || []).find(p => p.libelle && /vidange/i.test(p.libelle));
+  if(!prevVidange && (DB.preventions || []).length) prevVidange = DB.preventions[0];
+  const intervalKm = prevVidange && prevVidange.km ? Number(prevVidange.km) : 5000;
+  const intervalMois = prevVidange && prevVidange.mois ? Number(prevVidange.mois) : 6;
+
+  // Interventions de vidange enregistrées dans charges pour cet engin
+  const vidanges = rowsPour('charges')
+    .filter(c => c.categorie === 'maintenance' && c.enginId === e.id && (
+      (prevVidange && c.typeMaint === prevVidange.libelle) ||
+      (c.typeMaint && /vidange/i.test(c.typeMaint)) ||
+      (c.libelle && /vidange/i.test(c.libelle))
+    ))
+    .sort((a,b) => (b.date !== a.date ? (b.date < a.date ? -1 : 1) : (Number(b.km)||0) - (Number(a.km)||0)));
+
+  const last = vidanges[0] || null;
+  const kmActuel = currentKm(e);
+  const kmDerniere = last && last.km !== null && last.km !== undefined && !isNaN(last.km)
+    ? Number(last.km)
+    : (Number(e.kmDepart) || 0);
+
+  const dateDerniere = last ? last.date : (e.dateService || null);
+  const nextKm = kmDerniere + intervalKm;
+  const kmRestant = nextKm - kmActuel;
+
+  let nextDate = null;
+  let joursRestants = null;
+  if(dateDerniere && intervalMois){
+    const d = new Date(dateDerniere + 'T00:00:00');
+    d.setMonth(d.getMonth() + intervalMois);
+    nextDate = toISO(d);
+    const nowMidnight = new Date(); nowMidnight.setHours(0,0,0,0);
+    joursRestants = Math.round((new Date(nextDate + 'T00:00:00') - nowMidnight) / 86400000);
+  }
+
+  let etat = 'ok';
+  if(kmRestant <= 0 || (joursRestants !== null && joursRestants <= 0)){
+    etat = 'critique'; // Dépassée
+  } else if(kmRestant <= 500 || (joursRestants !== null && joursRestants <= 30)){
+    etat = 'attention'; // À l'approche (<= 500 km ou <= 30 jours)
+  }
+
+  return {
+    engin: e,
+    prev: prevVidange,
+    intervalKm,
+    kmDerniere,
+    dateDerniere,
+    kmActuel,
+    nextKm,
+    kmRestant,
+    nextDate,
+    joursRestants,
+    etat,
+    last
+  };
+}
+
 
 /* ---------- Sauvegarde / import ---------- */
 function exportJSON(){

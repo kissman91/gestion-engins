@@ -62,6 +62,9 @@
       </div>
     </div>
 
+    <!-- Alertes Vidanges & Entretiens Préventifs -->
+    <div id="dashAlertesVidanges" class="alertes" style="margin-bottom:18px"></div>
+
     <div class="kpis" id="kpis"></div>
 
     <div class="grid-2">
@@ -95,6 +98,30 @@
               <th>Engin</th><th class="num">Voyages</th><th class="num">Ouvertures</th>
               <th class="num">CA</th><th class="num">Dépenses</th><th class="num">Bénéfice</th>
               <th class="num">Km</th><th class="num">L/100km</th><th class="num">Coût/km</th><th class="num">Marge</th>
+              <th class="num">Prochaine vidange</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>🔧 Suivi des vidanges &amp; entretiens préventifs <span class="card-sub">prochaine échéance &amp; alertes kilométriques</span></h2>
+      </div>
+      <div class="table-wrap">
+        <table class="table" id="tableDashVidanges">
+          <thead>
+            <tr>
+              <th>Engin</th>
+              <th class="num">Compteur actuel</th>
+              <th class="num">Dernière vidange</th>
+              <th class="num">Prochaine vidange</th>
+              <th class="num">Reste (km)</th>
+              <th class="num">Date prévue</th>
+              <th>État</th>
+              <th>Action</th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -141,6 +168,9 @@
           <label>Client / chantier
             <input type="text" id="trvClient" placeholder="Ex. SCIEFA, Zone Nord…">
           </label>
+          <label>Compteur actuel (km)
+            <input type="number" id="trvKm" min="0" step="any" placeholder="Km engin">
+          </label>
         </div>
         <label class="full">Notes
           <textarea id="trvNotes" rows="2" placeholder="Facultatif"></textarea>
@@ -164,7 +194,7 @@
       <div class="table-wrap">
         <table class="table" id="tableTravaux">
           <thead>
-            <tr><th>Date</th><th>Activité</th><th>Engin</th><th class="num">Qté</th><th class="num">P.U.</th><th class="num">Montant</th><th>Client</th><th></th></tr>
+            <tr><th>Date</th><th>Activité</th><th>Engin</th><th class="num">Qté</th><th class="num">P.U.</th><th class="num">Montant</th><th class="num">Compteur</th><th>Client</th><th></th></tr>
           </thead>
           <tbody></tbody>
         </table>
@@ -206,8 +236,8 @@
           <label class="cat-carburant">Prix du litre
             <input type="number" id="chPrixLitre" min="0" step="any" placeholder="0">
           </label>
-          <label class="cat-carburant">Compteur (km)
-            <input type="number" id="chKm" min="0" step="any" placeholder="0">
+          <label id="chKmWrap" class="cat-km">Compteur (km)
+            <input type="number" id="chKm" min="0" step="any" placeholder="Compteur (km)">
           </label>
 
           <label class="cat-maintenance">Type d'intervention
@@ -492,6 +522,9 @@
           </label>
           <label>Prix unitaire
             <input type="number" id="trPrix" min="0" step="any" placeholder="Prix unitaire">
+          </label>
+          <label>Compteur actuel (km)
+            <input type="number" id="trKm" min="0" step="any" placeholder="Compteur engin">
           </label>
         </div>
         <div class="terrain-count">

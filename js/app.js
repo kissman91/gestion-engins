@@ -480,6 +480,40 @@ function currentPeriod(){
   return periodRange(key, $('#periodFrom').value, $('#periodTo').value);
 }
 
+// Notification d'alerte vidange à l'approche ou dépassée
+let _notifAlerteEnvoyee = false;
+function verifierEtNotifierAlertesVidanges(alertes){
+  if(!alertes || !alertes.length) return;
+  const critiques = alertes.filter(a => a.etat === 'critique');
+  const attentions = alertes.filter(a => a.etat === 'attention');
+  if(!critiques.length && !attentions.length) return;
+
+  if(!_notifAlerteEnvoyee){
+    _notifAlerteEnvoyee = true;
+    if(critiques.length){
+      const noms = critiques.map(a => a.engin.nom).join(', ');
+      toast(`🚨 Vidange dépassée sur : ${noms} !`, true);
+    } else if(attentions.length){
+      const noms = attentions.map(a => a.engin.nom).join(', ');
+      toast(`⚠️ Vidange à prévoir bientôt sur : ${noms}`);
+    }
+  }
+
+  if(typeof Notification !== 'undefined' && Notification.permission === 'granted'){
+    critiques.concat(attentions).slice(0, 3).forEach(a => {
+      const isCrit = a.etat === 'critique';
+      const title = isCrit ? `🚨 Vidange dépassée : ${a.engin.nom}` : `⚠️ Vidange à l'approche : ${a.engin.nom}`;
+      const body = isCrit 
+        ? `Compteur : ${fmtNum(a.kmActuel)} km (dépassé de ${fmtNum(-a.kmRestant)} km)`
+        : `Compteur : ${fmtNum(a.kmActuel)} km (reste ${fmtNum(a.kmRestant)} km avant vidange à ${fmtNum(a.nextKm)} km)`;
+      try { new Notification(title, { body }); } catch(e){}
+    });
+  } else if(typeof Notification !== 'undefined' && Notification.permission === 'default'){
+    try { Notification.requestPermission(); } catch(e){}
+  }
+}
+
+
 function renderDashboard(){
   if(syncReady()) doSilentSync(false);
   const range = currentPeriod();
@@ -487,13 +521,66 @@ function renderDashboard(){
 
   const periodLabel = `${frDate(range[0])} → ${frDate(range[1])}`;
 
+  // --- Suivi et alertes des vidanges ---
+  const vidangeInfos = (DB.engins || []).map(e => prochaineVidangeEngin(e)).filter(Boolean);
+  const critiquesVidange = vidangeInfos.filter(v => v.etat === 'critique');
+  const attentionsVidange = vidangeInfos.filter(v => v.etat === 'attention');
+
+  // Rendu du bandeau d'alerte en haut du tableau de bord
+  const dashAlertsEl = $('#dashAlertesVidanges');
+  if(dashAlertsEl){
+    let alertHtml = '';
+    critiquesVidange.forEach(v => {
+      alertHtml += `<div class="alerte critique" style="margin-bottom:8px">
+        <div class="a-txt">
+          <b>🚨 ALERTE VIDANGE DÉPASSÉE : ${escapeHTML(v.engin.nom)}</b>
+          Compteur actuel : <b>${fmtNum(v.kmActuel)} km</b> · Prévue à <b>${fmtNum(v.nextKm)} km</b> (${fmtNum(-v.kmRestant)} km de retard !)
+          ${v.nextDate ? ` · Échéance date : ${frDate(v.nextDate)}` : ''}
+        </div>
+        <a class="btn btn-sm btn-primary" href="#/charges" onclick="presetMaint('${v.engin.id}', '${v.prev ? v.prev.id : ''}')">➕ Enregistrer la vidange</a>
+      </div>`;
+    });
+    attentionsVidange.forEach(v => {
+      alertHtml += `<div class="alerte" style="margin-bottom:8px">
+        <div class="a-txt">
+          <b>⚠️ VIDANGE À L'APPROCHE : ${escapeHTML(v.engin.nom)}</b>
+          Compteur actuel : <b>${fmtNum(v.kmActuel)} km</b> · Prochaine à <b>${fmtNum(v.nextKm)} km</b> (reste seulement <b>${fmtNum(v.kmRestant)} km</b>)
+          ${v.nextDate ? ` · Date prévue : ${frDate(v.nextDate)}` : ''}
+        </div>
+        <a class="btn btn-sm btn-ghost" href="#/charges" onclick="presetMaint('${v.engin.id}', '${v.prev ? v.prev.id : ''}')">➕ Enregistrer la vidange</a>
+      </div>`;
+    });
+    dashAlertsEl.innerHTML = alertHtml;
+  }
+
+  // Envoi des notifications (toast & bureau)
+  verifierEtNotifierAlertesVidanges(critiquesVidange.concat(attentionsVidange));
+
+  // Statut KPI pour la vidange
+  let kpiVidangeVal = 'À jour ✓';
+  let kpiVidangeSub = 'Tous les engins OK';
+  let kpiVidangeCls = 'accent-ben';
+  let kpiVidangeCls2 = 'pos';
+  if(critiquesVidange.length){
+    kpiVidangeVal = `${critiquesVidange.length} en retard`;
+    kpiVidangeSub = critiquesVidange.map(v => v.engin.nom).join(', ');
+    kpiVidangeCls = 'accent-dep';
+    kpiVidangeCls2 = 'neg';
+  } else if(attentionsVidange.length){
+    const closest = attentionsVidange.slice().sort((a,b) => a.kmRestant - b.kmRestant)[0];
+    kpiVidangeVal = `Dans ${fmtNum(closest.kmRestant)} km`;
+    kpiVidangeSub = `${closest.engin.nom} (à ${fmtNum(closest.nextKm)} km)`;
+    kpiVidangeCls = 'accent-fuel';
+    kpiVidangeCls2 = 'down';
+  }
+
   const cards = [
     { cls:'accent-ca', label:'💼 Chiffre d\'affaires', value:money(k.ca), sub:`${k.nbTravaux} travaux · ${k.voyages} voyages · ${k.ouvertures} ouvertures` },
     { cls:'accent-dep', label:'💸 Dépenses totales', value:money(k.depenses), sub:`${k.nbCharges} opérations · carburant ${money(k.parCat.carburant)}` },
     { cls:'accent-ben', label:'📈 Bénéfice net', value:money(k.benefice), sub:`Marge : ${pct(k.marge)}`, cls2: k.benefice >= 0 ? 'pos' : 'neg' },
+    { cls:kpiVidangeCls, label:'🔧 Prochaine vidange', value:kpiVidangeVal, sub:kpiVidangeSub, cls2:kpiVidangeCls2 },
     { cls:'accent-fuel', label:'⛽ Carburant', value:fmtNum(k.litres,0) + ' L', sub:k.parCat.carburant ? money(k.parCat.carburant) : '—' },
     { cls:'', label:'🛢 Consommation', value:k.conso100 !== null ? fmtNum(k.conso100,1) + ' L/100km' : '—', sub:k.km ? fmtNum(k.km) + ' km parcourus' : 'Km non renseignés' },
-    { cls:'', label:'🔧 Maintenance', value:money(k.parCat.maintenance), sub:`${pctOf(k.parCat.maintenance, k.depenses)} des dépenses` },
     { cls:'', label:'👥 Salaires', value:money(k.parCat.salaire), sub:`${pctOf(k.parCat.salaire, k.depenses)} des dépenses` },
     { cls:'', label:'🅿️ Coût au km', value:k.coutKm !== null ? money(k.coutKm) : '—', sub:'dépenses ÷ km' }
   ];
@@ -574,6 +661,13 @@ function renderDashboard(){
     const ke = computeKPIs(range, e.id);
     totCa += ke.ca; totDep += ke.depenses; totBen += ke.benefice; totKm += ke.km;
     totV += ke.voyages; totO += ke.ouvertures;
+    const pv = vidangeInfos.find(v => v.engin.id === e.id);
+    let badgeVidange = '—';
+    if(pv){
+      const bClass = pv.etat === 'critique' ? 'b-rouge' : (pv.etat === 'attention' ? 'b-orange' : 'b-vert');
+      const txt = pv.etat === 'critique' ? `${fmtNum(pv.nextKm)} km (retard)` : (pv.etat === 'attention' ? `${fmtNum(pv.nextKm)} km (reste ${fmtNum(pv.kmRestant)})` : `${fmtNum(pv.nextKm)} km`);
+      badgeVidange = `<span class="badge ${bClass}">${txt}</span>`;
+    }
     return `<tr>
       <td><a href="#/engins" data-open-engin="${e.id}" class="link-engin"><b>${escapeHTML(e.nom)}</b></a></td>
       <td class="num">${ke.voyages}</td>
@@ -585,6 +679,7 @@ function renderDashboard(){
       <td class="num">${ke.conso100 !== null ? fmtNum(ke.conso100,1) : '—'}</td>
       <td class="num">${ke.coutKm !== null ? money(ke.coutKm) : '—'}</td>
       <td class="num">${pct(ke.marge)}</td>
+      <td class="num">${badgeVidange}</td>
     </tr>`;
   }).join('');
   const totalRow = DB.engins.length ? `
@@ -596,6 +691,7 @@ function renderDashboard(){
       <td class="num"><b>${k.conso100!==null?fmtNum(k.conso100,1):'—'}</b></td>
       <td class="num"><b>${k.coutKm!==null?money(k.coutKm):'—'}</b></td>
       <td class="num"><b>${pct(k.marge)}</b></td>
+      <td class="num">—</td>
     </tr>` : '';
   tbody.innerHTML = rowsEngins + totalRow;
 
@@ -609,6 +705,30 @@ function renderDashboard(){
     });
   });
 
+  // --- Tableau dédié : Suivi des vidanges et entretiens préventifs ---
+  const tbodyVidanges = $('#tableDashVidanges tbody');
+  if(tbodyVidanges){
+    tbodyVidanges.innerHTML = vidangeInfos.map(pv => {
+      const badgeV = pv.etat === 'critique' ? '<span class="badge b-rouge">Dépassée</span>'
+        : (pv.etat === 'attention' ? '<span class="badge b-orange">À l\'approche</span>' : '<span class="badge b-vert">OK</span>');
+      const resteClass = pv.kmRestant <= 0 ? 'neg' : (pv.kmRestant <= 500 ? 'neg' : 'pos');
+      const resteTxt = pv.kmRestant <= 0 ? `Dépassé de ${fmtNum(-pv.kmRestant)} km` : `${fmtNum(pv.kmRestant)} km`;
+      const derniereTxt = pv.last ? `${frDate(pv.last.date)} (${fmtNum(pv.kmDerniere)} km)` : `<span class="muted">Départ (${fmtNum(pv.kmDerniere)} km)</span>`;
+      return `<tr>
+        <td><b>${escapeHTML(pv.engin.nom)}</b></td>
+        <td class="num">${fmtNum(pv.kmActuel)} km</td>
+        <td class="num">${derniereTxt}</td>
+        <td class="num"><b>${fmtNum(pv.nextKm)} km</b></td>
+        <td class="num ${resteClass}"><b>${resteTxt}</b></td>
+        <td class="num">${pv.nextDate ? frDate(pv.nextDate) + (pv.joursRestants !== null ? ' (' + pv.joursRestants + ' j)' : '') : '—'}</td>
+        <td>${badgeV}</td>
+        <td style="white-space:nowrap">
+          <a class="btn btn-sm btn-ghost" href="#/charges" onclick="presetMaint('${pv.engin.id}', '${pv.prev ? pv.prev.id : ''}')">➕ Vidange</a>
+        </td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="8" class="muted">Aucun engin enregistré.</td></tr>';
+  }
+
   // --- activité récente ---
   const recent = []
     .concat(rowsPour('travaux').map(t => ({ date:t.date, type:'trv', obj:t })))
@@ -620,7 +740,7 @@ function renderDashboard(){
       const a = activiteById(r.obj.activiteId);
       return `<div class="recent-item">
         <span class="r-date">${frDate(r.obj.date)}</span>
-        <span class="r-main">📋 ${escapeHTML(a?a.libelle:'Travail')} — ${r.obj.qte} ${escapeHTML(a?unitePlural(r.obj.qte, a.unite):'unités')} · ${escapeHTML(enginNom(r.obj.enginId))}</span>
+        <span class="r-main">📋 ${escapeHTML(a?a.libelle:'Travail')} — ${r.obj.qte} ${escapeHTML(a?unitePlural(r.obj.qte, a.unite):'unités')} · ${escapeHTML(enginNom(r.obj.enginId))}${r.obj.km ? ' (' + fmtNum(r.obj.km) + ' km)' : ''}</span>
         <span class="r-amt pos">+${money(trvMontant(r.obj))}</span>
       </div>`;
     }
@@ -630,11 +750,12 @@ function renderDashboard(){
       : (c.libelle || (c.typeMaint) || CATEGORIES[c.categorie].label);
     return `<div class="recent-item">
       <span class="r-date">${frDate(c.date)}</span>
-      <span class="r-main">${badge(c.categorie)} ${escapeHTML(detail)}${c.enginId ? ' · ' + escapeHTML(enginNom(c.enginId)) : ''}</span>
+      <span class="r-main">${badge(c.categorie)} ${escapeHTML(detail)}${c.enginId ? ' · ' + escapeHTML(enginNom(c.enginId)) : ''}${c.km ? ' · ' + fmtNum(c.km) + ' km' : ''}</span>
       <span class="r-amt neg">-${money(c.montant)}</span>
     </div>`;
   }).join('') : '<div class="muted">Aucune activité enregistrée pour l\'instant.</div>';
 }
+
 
 function unitePlural(qte, unite){
   if(!unite) return 'unités';
@@ -696,6 +817,7 @@ function syncTrvUnite(){
 function renderTravaux(){
   fillTravauxSelects();
   if(!$('#trvDate').value) $('#trvDate').value = today();
+  $('#trvKm').value = '';
   syncTrvUnite();
 
   const month = $('#trvFilterMonth').value;
@@ -719,7 +841,7 @@ function renderTravaux(){
         <button class="btn-icon del" data-priv="travaux:suppr" title="Supprimer" onclick="del('${t.id}','travaux')">🗑</button>
       </td>
     </tr>`;
-  }).join('') || '<tr><td colspan="8" class="muted">Aucun travail enregistré.</td></tr>';
+  }).join('') || '<tr><td colspan="9" class="muted">Aucun travail enregistré.</td></tr>';
 
   const total = rows.reduce((s,t) => s + trvMontant(t), 0);
   $('#travauxFoot').innerHTML = `<span>Total : <b class="pos">${money(total)}</b></span><span>${rows.length} travail(s)</span>`;
@@ -736,6 +858,7 @@ function editTravaux(id){
   $('#trvQte').value = t.qte;
   $('#trvClient').value = t.client || '';
   $('#trvNotes').value = t.notes || '';
+  $('#trvKm').value = t.km !== undefined && t.km !== null ? t.km : '';
   if(t.conducteur) $('#trvConducteur').value = t.conducteur;
   window._prixTouched = true;          // on ne re-écrit pas le prix de l'activité
   syncTrvUnite();
@@ -792,15 +915,20 @@ function initTravaux(){
   $('#trvActivite').addEventListener('change', () => { window._prixTouched = false; syncTrvUnite(); });
   $('#trvFilterMonth').addEventListener('input', renderTravaux);
   $('#trvFilterEngin').addEventListener('change', renderTravaux);
+  $('#trvEngin').addEventListener('change', () => {
+    const eid = $('#trvEngin').value;
+    $('#trvKm').placeholder = eid ? 'Dernier relevé : ' + fmtNum(currentKm(eid)) + ' km' : 'Compteur actuel (km)';
+  });
   $('#trvExport').addEventListener('click', () => {
     if(!requirePriv('global:export')) return;
     const rows = rowsPour('travaux').slice().sort((a,b) => a.date < b.date ? 1 : -1).map(t => {
       const a = activiteById(t.activiteId);
-      return [t.date, a?a.libelle:'', a?a.unite:'', t.qte, t.prixUnitaire, trvMontant(t), enginNom(t.enginId), t.conducteur||'', t.client||'', t.notes||''];
+      const condNom = t.conducteur ? ((employeById(t.conducteur)||{}).nom || t.conducteur) : '';
+      return [t.date, a?a.libelle:'', a?a.unite:'', t.qte, t.prixUnitaire, trvMontant(t), t.km||'', enginNom(t.enginId), condNom, t.client||'', t.notes||''];
     });
     const totalMontant = rows.reduce((s, r) => s + (Number(r[5]) || 0), 0);
     exportXLS('travaux.xls', 'Historique des Travaux Réalisés',
-      ['Date','Activité','Unité','Quantité','Prix unitaire','Montant','Engin','Conducteur','Client','Notes'],
+      ['Date','Activité','Unité','Quantité','Prix unitaire','Montant','Compteur (km)','Engin','Conducteur','Client','Notes'],
       rows,
       { foot: [{ colspan: 5, text: 'Total (' + rows.length + ' travaux)' }, { isNum: true, text: totalMontant }, '', '', '', ''] }
     );
@@ -884,7 +1012,7 @@ function renderTerrainJour(){
     const a = activiteById(t.activiteId);
     return `<div class="recent-item">
       <span class="r-ico">${a && /débardage|debardage|ouverture/i.test(a.libelle + a.unite) ? '🪵' : '🚛'}</span>
-      <span class="r-main">${escapeHTML(a?a.libelle:'Travail')} — ${fmtNum(t.qte)} ${escapeHTML(a?a.unite:'unités')} · ${escapeHTML(enginNom(t.enginId))}${t.conducteur ? ' · ' + escapeHTML((employeById(t.conducteur)||{}).nom||'') : ''}</span>
+      <span class="r-main">${escapeHTML(a?a.libelle:'Travail')} — ${fmtNum(t.qte)} ${escapeHTML(a?a.unite:'unités')} · ${escapeHTML(enginNom(t.enginId))}${t.conducteur ? ' · ' + escapeHTML((employeById(t.conducteur)||{}).nom||'') : ''}${t.km ? ' · ' + fmtNum(t.km) + ' km' : ''}</span>
       <span class="r-amt pos">${money(trvMontant(t))}</span>
       <button class="btn-icon del" data-priv="travaux:suppr" title="Supprimer" onclick="del('${t.id}','travaux')">🗑</button>
     </div>`;
@@ -924,6 +1052,7 @@ function initTerrain(){
     DB.travaux.push(data);
     saveDB();
     $('#trQte').value = 1;
+    $('#trKm').value = '';
     if(trPrixElem) trPrixElem.dataset.touched = '';
     renderTerrain(); renderMini();
     toast('Saisie enregistrée ✓');
@@ -939,6 +1068,10 @@ function initTerrain(){
   });
   $('#trQte').addEventListener('input', updateTerrainMontant);
   $('#trDate').addEventListener('change', renderTerrainJour);
+  $('#trEngin').addEventListener('change', () => {
+    const eid = $('#trEngin').value;
+    $('#trKm').placeholder = eid ? 'Dernier : ' + fmtNum(currentKm(eid)) + ' km' : 'Compteur engin';
+  });
   $('#trSync').addEventListener('click', async () => {
     if(!requirePriv('global:sync')) return;
     if(!syncReady()){ toast('Configurez Supabase dans Paramètres', true); return; }
@@ -1276,6 +1409,13 @@ function resetChargeForm(){
 
 function initCharges(){
   $('#chCategorie').addEventListener('change', syncChargeFields);
+  $('#chEngin').addEventListener('change', () => {
+    const eid = $('#chEngin').value;
+    if(eid && !$('#chKm').value){
+      const km = currentKm(eid);
+      if(km > 0) $('#chKm').placeholder = 'Dernier compteur : ' + fmtNum(km) + ' km';
+    }
+  });
 
   const autoMontant = () => {
     if($('#chId').value) return;
