@@ -5,6 +5,4 @@
 tests
 test_*
 *.md
-Dockerfile
-nginx.conf
 .kilo
