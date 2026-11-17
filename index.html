@@ -924,6 +924,9 @@
       <label class="check-line"><input type="checkbox" id="lgRemember"> Rester connecté sur cet appareil</label>
       <button type="submit" class="btn btn-primary auth-btn">🔓 Se connecter</button>
       <div class="auth-err hidden" id="lgErr"></div>
+      <button type="button" class="btn btn-ghost auth-alt" id="btnLoginShowPin" style="font-size:12px;opacity:.8;margin-top:8px">🔐 Espace Propriétaire (Code PIN)</button>
+      <button type="button" class="btn btn-ghost auth-alt" id="btnAuthImportBackup" style="font-size:12px;opacity:.7;margin-top:2px">📁 Restaurer une sauvegarde JSON</button>
+      <input type="file" id="authBackupFile" accept=".json,application/json" class="hidden">
     </form>
 
     <div id="cloudBootBox" class="auth-form">
@@ -940,6 +943,7 @@
         <div class="muted" id="cbStatus"></div>
       </form>
       <button type="button" class="btn btn-ghost auth-alt" id="btnShowPin" style="font-size:12px;opacity:.7">🔐 Espace Propriétaire (Code PIN)</button>
+      <button type="button" class="btn btn-ghost auth-alt" id="btnCloudImportBackup" style="font-size:12px;opacity:.7;margin-top:2px">📁 Restaurer une sauvegarde JSON</button>
     </div>
 
     <form id="formAdminPin" class="auth-col hidden">

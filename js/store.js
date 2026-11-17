@@ -926,7 +926,7 @@ async function enregistrerUtilisateur(data){
 
   const existant = data.id ? userById(data.id) : null;
   const moi = currentUser();
-  if(!utilisateurs().length){
+  if(!utilisateurs().length || (!adminActifs().length && data.role === 'admin') || data._forceAdmin){
     // premier appareil : création libre du tout premier compte
   }else if(!moi){
     throw new Error('Connexion requise');

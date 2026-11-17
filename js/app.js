@@ -390,7 +390,8 @@ function initAuth(){
 
   // Déverrouillage par Code PIN maître
   $('#btnShowPin').addEventListener('click', () => openAuth('pin'));
-  $('#btnCancelPin').addEventListener('click', () => openAuth('first'));
+  if($('#btnLoginShowPin')) $('#btnLoginShowPin').addEventListener('click', () => openAuth('pin'));
+  $('#btnCancelPin').addEventListener('click', () => openAuth(utilisateurs().length ? 'login' : 'first'));
   $('#formAdminPin').addEventListener('submit', async e => {
     e.preventDefault();
     const pin = $('#adminPinInput').value;
@@ -404,6 +405,32 @@ function initAuth(){
     toast('Accès propriétaire accordé ✓');
   });
 
+  const handleBackupImport = () => {
+    const inp = $('#authBackupFile');
+    if(inp){ inp.value = ''; inp.click(); }
+  };
+  if($('#btnAuthImportBackup')) $('#btnAuthImportBackup').addEventListener('click', handleBackupImport);
+  if($('#btnCloudImportBackup')) $('#btnCloudImportBackup').addEventListener('click', handleBackupImport);
+  if($('#authBackupFile')){
+    $('#authBackupFile').addEventListener('change', e => {
+      const file = e.target.files && e.target.files[0];
+      if(!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        try{
+          importJSON(ev.target.result);
+          toast('Sauvegarde restaurée avec succès ✓');
+          if(utilisateurs().length) openAuth('login');
+          else openAuth('first');
+        }catch(err){
+          authErr('#lgErr', 'Erreur de restauration : ' + err.message);
+          toast('Erreur de restauration', true);
+        }
+      };
+      reader.readAsText(file);
+    });
+  }
+
   $('#formFirstAdmin').addEventListener('submit', async e => {
     e.preventDefault();
     if(!_adminUnlocked){
@@ -415,16 +442,26 @@ function initAuth(){
     if(!nom || !id) return authErr('#faErr', 'Renseignez nom et identifiant');
     if(mdp.length < 4) return authErr('#faErr', 'Mot de passe : 4 caractères minimum');
     if(mdp !== $('#faMdp2').value) return authErr('#faErr', 'Les deux mots de passe ne correspondent pas');
-    if(!loginDispo(id)) return authErr('#faErr', 'Cet identifiant est déjà utilisé');
+    const existant = userByLogin(id);
+    if(existant && existant.role !== 'admin') return authErr('#faErr', 'Cet identifiant est déjà utilisé');
     const btn = e.target.querySelector('button[type=submit]');
     btn.disabled = true;
     try{
-      const u = await enregistrerUtilisateur({ nom, login:id, role:'admin', actif:true, mdp });
+      let u;
+      if(existant && existant.role === 'admin'){
+        existant.nom = nom;
+        existant.actif = true;
+        await setMdp(existant, mdp);
+        saveDB();
+        u = existant;
+      }else{
+        u = await enregistrerUtilisateur({ nom, login:id, role:'admin', actif:true, mdp, _forceAdmin:true });
+      }
       _adminUnlocked = false;
       ouvrirSession(u, false);
       $('#formFirstAdmin').reset();
       afterLogin();
-      toast('Administrateur créé ✓');
+      toast('Administrateur configuré ✓');
     }catch(err){
       authErr('#faErr', 'Erreur : ' + err.message);
     }finally{
@@ -436,7 +473,7 @@ function initAuth(){
   $('#btnLogout2').addEventListener('click', doLogout);
 
   // --- appareil vierge : récupération des comptes depuis le cloud ---
-  $('#btnShowCloud').addEventListener('click', () => openAuth('first'));
+  $('#btnShowCloud').addEventListener('click', () => openAuth(utilisateurs().length ? 'login' : 'first'));
   $('#formCloudBoot').addEventListener('submit', async e => {
     e.preventDefault();
     const url = $('#cbUrl').value.trim();
