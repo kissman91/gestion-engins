@@ -1,10 +1,10 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Gestion Engins — Transferts &amp; Débardage</title>
-<link rel="stylesheet" href="css/style.css?v=__BUILD__">
+<link rel="stylesheet" href="css/style.css?v=20261117_0845">
 </head>
 <body>
 
@@ -924,7 +924,7 @@
       <label class="check-line"><input type="checkbox" id="lgRemember"> Rester connecté sur cet appareil</label>
       <button type="submit" class="btn btn-primary auth-btn">🔓 Se connecter</button>
       <div class="auth-err hidden" id="lgErr"></div>
-      <button type="button" class="btn btn-ghost auth-alt" id="btnLoginShowPin" style="font-size:12px;opacity:.8;margin-top:8px">🔐 Espace Propriétaire (Code PIN)</button>
+      <button type="button" class="btn btn-ghost auth-alt" id="btnLoginShowPin" onclick="window.openAuth && window.openAuth('pin')" style="font-size:12px;opacity:.8;margin-top:8px">🔐 Espace Propriétaire (Code PIN)</button>
       <button type="button" class="btn btn-ghost auth-alt" id="btnAuthImportBackup" style="font-size:12px;opacity:.7;margin-top:2px">📁 Restaurer une sauvegarde JSON</button>
       <input type="file" id="authBackupFile" accept=".json,application/json" class="hidden">
     </form>
@@ -942,7 +942,7 @@
         <div class="auth-err hidden" id="cbErr"></div>
         <div class="muted" id="cbStatus"></div>
       </form>
-      <button type="button" class="btn btn-ghost auth-alt" id="btnShowPin" style="font-size:12px;opacity:.7">🔐 Espace Propriétaire (Code PIN)</button>
+      <button type="button" class="btn btn-ghost auth-alt" id="btnShowPin" onclick="window.openAuth && window.openAuth('pin')" style="font-size:12px;opacity:.7">🔐 Espace Propriétaire (Code PIN)</button>
       <button type="button" class="btn btn-ghost auth-alt" id="btnCloudImportBackup" style="font-size:12px;opacity:.7;margin-top:2px">📁 Restaurer une sauvegarde JSON</button>
     </div>
 
@@ -983,10 +983,10 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/store.js?v=__BUILD__"></script>
-<script src="js/charts.js?v=__BUILD__"></script>
-<script src="js/sync.js?v=__BUILD__"></script>
-<script src="js/bulletins.js?v=__BUILD__"></script>
-<script src="js/app.js?v=__BUILD__"></script>
+<script src="js/store.js?v=20261117_0845"></script>
+<script src="js/charts.js?v=20261117_0845"></script>
+<script src="js/sync.js?v=20261117_0845"></script>
+<script src="js/bulletins.js?v=20261117_0845"></script>
+<script src="js/app.js?v=20261117_0845"></script>
 </body>
 </html>
